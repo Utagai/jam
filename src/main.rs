@@ -14,7 +14,7 @@ struct Target {
     shortname: Option<String>,
     help: Option<String>,
     cmd: Option<String>,
-    targets: Option<Vec<Target>>,
+    deps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
