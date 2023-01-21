@@ -6,22 +6,21 @@ use daggy::{Dag, NodeIndex};
 use crate::config::{Config, TargetCfg};
 
 // TODO: Exercise - can we use &str in any of these fields?
-// TODO: We need to reconcile the naming of 'Target' vs 'Task'.
-struct Task {
+struct Target {
     name: String,
     shortname: String,
     help: String,
     cmd: Option<String>,
 }
 
-impl From<&TargetCfg> for Task {
+impl From<&TargetCfg> for Target {
     fn from(value: &TargetCfg) -> Self {
         // TODO: The clone() calls here may go away if we manage to
-        // use &str in the TaskCfg instead...  Right now they are all
+        // use &str in the TargetCfg instead...  Right now they are all
         // String, which we can't take without moving or
         // cloning. Moving can't be done here since we are From'ing
         // from a shared reference, so we have to clone.
-        return Task {
+        return Target {
             name: value.name.clone(),
             // TODO: The shortname needs to be computed, but right now it is just the same as the long name.
             shortname: value.shortname.clone().unwrap_or(value.name.clone()),
@@ -35,19 +34,19 @@ impl From<&TargetCfg> for Task {
 }
 
 pub struct Jam {
-    exec_dag: Dag<Task, u32>,
+    exec_dag: Dag<Target, u32>,
 }
 
 impl Jam {
     // TODO: This function should be doing validation.
     // e.g.
     // 1. checking for cycles
-    // 2. duplicate target/task names
+    // 2. duplicate target names
     // 3. etc
     pub fn parse(cfg: Config) -> Result<Jam> {
-        let mut exec_dag: Dag<Task, u32> = Dag::new();
+        let mut exec_dag: Dag<Target, u32> = Dag::new();
         // TODO: I wonder if we can use NodeIndex<String> and just use
-        // the task name to find a particular node, making the
+        // the target name to find a particular node, making the
         // node_idxes map unnecessary?
         let mut node_idxes: HashMap<String, NodeIndex<u32>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
@@ -60,7 +59,7 @@ impl Jam {
         while !target_queue.is_empty() {
             let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
             println!("Looking at target: {}", target.name);
-            let node_idx = exec_dag.add_node(Task::from(target));
+            let node_idx = exec_dag.add_node(Target::from(target));
             if let Some(targets) = &target.targets {
                 for subtarget in targets {
                     target_queue.push_back(subtarget);
