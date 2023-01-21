@@ -28,8 +28,3 @@ pub struct Config {
     pub options: Options,
     pub targets: Vec<TargetCfg>,
 }
-
-// TODO: There is no validation of the config going on but there
-// should be.
-// e.g.:
-// 1. task names must be alphanumeric + dashes + underscores, that's it?

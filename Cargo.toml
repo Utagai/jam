@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.68"
+daggy = "0.8.0"
+either = "1.8.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_yaml = "0.9.17"
