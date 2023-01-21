@@ -3,7 +3,7 @@ use std::fs::File;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct Target {
+struct TargetCfg {
     name: String,
     // TODO: I believe, if we define custom serialization for this
     // field, we can make this non-Optional as long as we know
@@ -24,14 +24,13 @@ struct Options {}
 struct Config {
     #[serde(flatten)]
     options: Options,
-    targets: Vec<Target>,
+    targets: Vec<TargetCfg>,
 }
 
 fn main() -> anyhow::Result<()> {
-    println!("Hello, world!");
-    let f = File::open("./rsrc/simple.yaml")?;
-    let yaml_s: Config = serde_yaml::from_reader(f)?;
-    println!("{:#?}", yaml_s);
+    let cfg_file = File::open("./rsrc/simple.yaml")?;
+    let cfg: Config = serde_yaml::from_reader(cfg_file)?;
+    println!("{:#?}", cfg);
 
     return Ok(());
 }
