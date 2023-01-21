@@ -1,31 +1,32 @@
 use serde::Deserialize;
 
+// TODO: Exercise - can we use &str in any of these fields?
 #[derive(Debug, Deserialize)]
-pub(crate) struct TargetCfg {
-    name: String,
+pub struct TargetCfg {
+    pub name: String,
     // TODO: I believe, if we define custom serialization for this
     // field, we can make this non-Optional as long as we know
     // name. There may be conflicts, but those can be reconciled at a
     // time after serialization.  Plus, the reconciliation logic
     // likely gets simpler if it can work with String rather than
     // Option<String>.
-    shortname: Option<String>,
-    help: Option<String>,
+    pub shortname: Option<String>,
+    pub help: Option<String>,
     // TODO: Should this still be optional even if we have linear task
     // definitions?
-    cmd: Option<String>,
-    targets: Option<Vec<TargetCfg>>,
-    deps: Option<Vec<String>>,
+    pub cmd: Option<String>,
+    pub targets: Option<Vec<TargetCfg>>,
+    pub deps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct Options {}
+pub struct Options {}
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct Config {
+pub struct Config {
     #[serde(flatten)]
-    pub(crate) options: Options,
-    pub(crate) targets: Vec<TargetCfg>,
+    pub options: Options,
+    pub targets: Vec<TargetCfg>,
 }
 
 // TODO: There is no validation of the config going on but there
