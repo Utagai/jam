@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use anyhow::Result;
-use daggy::{Dag, NodeIndex};
+use daggy::{Dag, NodeIndex, Walker};
 
 use crate::config::{Config, TargetCfg};
 
@@ -34,6 +34,9 @@ impl From<&TargetCfg> for Target {
 }
 
 pub struct Jam {
+    // TODO: We should be able to bind the type parameter of NodeIndex
+    // to the corresponding type parameter in Dag.
+    roots: Vec<NodeIndex<u32>>,
     exec_dag: Dag<Target, u32>,
 }
 
@@ -51,28 +54,37 @@ impl Jam {
         let mut node_idxes: HashMap<String, NodeIndex<u32>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
         let mut deps: Vec<(String, String)> = Vec::new();
+        let mut roots: Vec<NodeIndex<u32>> = Vec::new();
 
         target_queue.extend(cfg.targets.iter());
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
+        let mut iterating_roots = true;
         while !target_queue.is_empty() {
-            let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
-            println!("Looking at target: {}", target.name);
-            let node_idx = exec_dag.add_node(Target::from(target));
-            if let Some(targets) = &target.targets {
-                for subtarget in targets {
-                    target_queue.push_back(subtarget);
-                    deps.push((target.name.clone(), subtarget.name.clone()))
+            let queue_len = target_queue.len();
+            for _ in 0..queue_len {
+                let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
+                println!("Looking at target: {}", target.name);
+                let node_idx = exec_dag.add_node(Target::from(target));
+                if iterating_roots {
+                    roots.push(node_idx.clone());
                 }
-            }
+                if let Some(targets) = &target.targets {
+                    for subtarget in targets {
+                        target_queue.push_back(subtarget);
+                        deps.push((target.name.clone(), subtarget.name.clone()))
+                    }
+                }
 
-            if let Some(target_deps) = &target.deps {
-                for dep in target_deps {
-                    deps.push((target.name.clone(), dep.clone()));
+                if let Some(target_deps) = &target.deps {
+                    for dep in target_deps {
+                        deps.push((target.name.clone(), dep.clone()));
+                    }
                 }
+                node_idxes.insert(target.name.clone(), node_idx);
             }
-            node_idxes.insert(target.name.clone(), node_idx);
+            iterating_roots = false; // TODO: Cleaner way to write this?
         }
 
         // With their dependencies recorded, now add edges to the DAG to represent them:
@@ -90,6 +102,21 @@ impl Jam {
             )?;
         }
 
-        Ok(Jam { exec_dag })
+        Ok(Jam { roots, exec_dag })
+    }
+
+    fn has_target(&self, target_name: &str) -> bool {
+        for root in &self.roots {
+            if self
+                .exec_dag
+                .children(*root)
+                .iter(&self.exec_dag)
+                .any(|(_, n)| self.exec_dag[n].name == target_name)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
