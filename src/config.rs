@@ -14,6 +14,7 @@ pub(crate) struct TargetCfg {
     // TODO: Should this still be optional even if we have linear task
     // definitions?
     cmd: Option<String>,
+    targets: Option<Vec<TargetCfg>>,
     deps: Option<Vec<String>>,
 }
 

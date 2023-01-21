@@ -5,11 +5,11 @@ targets:
     cmd: "echo 'foo'"
   - name: "bar"
     cmd: "echo 'bar'"
-    deps:
-      - "baz"
-      - "bam"
-  - name: "baz"
-    help: "runs the baz command, duh"
-    cmd: "echo 'baz'"
-  - name: "bam"
-    cmd: "echo 'bam'"
+    targets:
+      - name: "bar-baz"
+        help: "runs the baz command, duh"
+        cmd: "echo 'baz'"
+      - name: "bar-qux"
+        cmd: "echo 'bam'"
+        deps:
+          - "foo"
