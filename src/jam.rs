@@ -104,19 +104,89 @@ impl Jam {
 
         Ok(Jam { roots, exec_dag })
     }
+}
 
-    fn has_target(&self, target_name: &str) -> bool {
-        for root in &self.roots {
-            if self
-                .exec_dag
-                .children(*root)
-                .iter(&self.exec_dag)
-                .any(|(_, n)| self.exec_dag[n].name == target_name)
-            {
-                return true;
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::config::Options;
+
+    impl Jam {
+        fn node_has_target(&self, nidx: &NodeIndex<u32>, target_name: &str) -> bool {
+            self.exec_dag[*nidx].name == target_name
+                || self
+                    .exec_dag
+                    .children(*nidx)
+                    .iter(&self.exec_dag)
+                    .any(|(_, n)| {
+                        self.exec_dag[n].name == target_name
+                            || self.node_has_target(&n, target_name)
+                    })
         }
 
-        return false;
+        fn has_target(&self, target_name: &str) -> bool {
+            for root in &self.roots {
+                println!("looking @ {:?}", root);
+                if self.node_has_target(root, target_name) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    fn lone(name: &str) -> TargetCfg {
+        TargetCfg {
+            name: String::from(name),
+            shortname: None,
+            help: None,
+            cmd: None,
+            targets: None,
+            deps: None,
+        }
+    }
+
+    #[test]
+    fn parse_single_target() {
+        let expected_target_name = "foo";
+        let cfg = Config {
+            options: Options {},
+            targets: vec![lone(expected_target_name)],
+        };
+        let jam = Jam::parse(cfg).expect("expected no errors from parsing");
+        assert!(jam.has_target(expected_target_name));
+        assert_eq!(jam.exec_dag.node_count(), 1);
+        assert_eq!(jam.exec_dag.edge_count(), 0);
+    }
+
+    #[test]
+    fn parse_zero_targets() {
+        let cfg = Config {
+            options: Options {},
+            targets: vec![],
+        };
+        let jam = Jam::parse(cfg).expect("expected no errors from parsing");
+        assert_eq!(jam.exec_dag.node_count(), 0);
+        assert_eq!(jam.exec_dag.edge_count(), 0);
+    }
+
+    #[test]
+    fn parse_multiple_targets() {
+        let expected_target_names = vec!["foo", "bar", "baz"];
+        let cfg = Config {
+            options: Options {},
+            targets: expected_target_names
+                .iter()
+                .map(|name| lone(name))
+                .collect(),
+        };
+        let jam = Jam::parse(cfg).expect("expected no errors from parsing");
+        expected_target_names
+            .iter()
+            .for_each(|name| assert!(jam.has_target(&name)));
+        assert_eq!(jam.exec_dag.node_count(), 3);
+        assert_eq!(jam.exec_dag.edge_count(), 0);
     }
 }
