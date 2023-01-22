@@ -42,9 +42,9 @@ impl From<&TargetCfg> for Target {
 pub struct Jam {
     // TODO: We should be able to bind the type parameter of NodeIndex
     // to the corresponding type parameter in Dag.
-    roots: Vec<NodeIndex<u32>>,
-    exec_dag: Dag<Target, u32>,
-    trie: Trie<Chord, Vec<NodeIndex<u32>>>,
+    root_targets: Vec<NodeIndex<u32>>,
+    dag: Dag<Target, u32>,
+    chords: Trie<Chord, Vec<NodeIndex<u32>>>,
 }
 
 #[derive(Eq)]
@@ -107,7 +107,7 @@ impl Jam {
         let mut node_idxes: HashMap<String, NodeIndex<u32>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
         let mut deps: Vec<(String, String)> = Vec::new();
-        let mut roots: Vec<NodeIndex<u32>> = Vec::new();
+        let mut root_targets: Vec<NodeIndex<u32>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
@@ -152,8 +152,13 @@ impl Jam {
 
                 let node_idx = exec_dag.add_node(target);
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
-                if roots.len() < queue_len {
-                    roots.push(node_idx.clone());
+                // This will only fill up to the amount of the _first_
+                // value of queue_len, which is going to be the number
+                // of nodes at the top level of the BFS -- this is
+                // precisely the set of root nodes, aka, the top-level
+                // targets.
+                if root_targets.len() < queue_len {
+                    root_targets.push(node_idx.clone());
                 }
                 if let Some(targets) = &target_cfg.targets {
                     for subtarget in targets {
@@ -185,9 +190,9 @@ impl Jam {
         }
 
         Ok(Jam {
-            roots,
-            exec_dag,
-            trie,
+            root_targets,
+            dag: exec_dag,
+            chords: trie,
         })
     }
 
@@ -211,29 +216,29 @@ mod tests {
                 nidx: &NodeIndex<u32>,
                 target_name: &str,
             ) -> Option<NodeIndex<u32>> {
-                if self.exec_dag[*nidx].name == target_name {
+                if self.dag[*nidx].name == target_name {
                     return Some(*nidx);
                 }
 
-                self.exec_dag
+                self.dag
                     .children(*nidx)
-                    .iter(&self.exec_dag)
+                    .iter(&self.dag)
                     .map(|(_, n)| self.node_has_target(&n, target_name))
                     .find(|n| n.is_some())
                     .flatten()
             }
 
             fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
-                self.roots
+                self.root_targets
                     .iter()
                     .map(|root| self.node_has_target(root, target_name))
                     .find(|found_node| found_node.is_some())
                     .flatten()
-                    .map(|node_idx| &self.exec_dag[node_idx])
+                    .map(|node_idx| &self.dag[node_idx])
             }
 
             fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<u32>>> {
-                self.trie.get(&chord)
+                self.chords.get(&chord)
             }
 
             fn has_target(&self, target_name: &str) -> bool {
@@ -241,12 +246,12 @@ mod tests {
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
-                for root in &self.roots {
+                for root in &self.root_targets {
                     let depender_idx = self.node_has_target(root, dependee);
                     let dependent_idx = self.node_has_target(root, dependent);
                     if match depender_idx.zip(dependent_idx) {
                         Some((depender_idx, dependent_idx)) => self
-                            .exec_dag
+                            .dag
                             .find_edge(depender_idx, dependent_idx)
                             .is_some(),
                         None => false,
@@ -329,8 +334,8 @@ mod tests {
                 assert!(jam.has_dep(dep.0, dep.1));
             }
 
-            assert_eq!(jam.exec_dag.node_count(), targets.len());
-            assert_eq!(jam.exec_dag.edge_count(), deps.len());
+            assert_eq!(jam.dag.node_count(), targets.len());
+            assert_eq!(jam.dag.edge_count(), deps.len());
         }
 
         fn verify_jam_dags(jams: Vec<Jam>, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
