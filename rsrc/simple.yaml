@@ -1,7 +1,7 @@
 ---
 targets:
   - name: "foo"
-    shortname: "f"
+    chord: "f"
     cmd: "echo 'foo'"
   - name: "bar"
     cmd: "echo 'bar'"

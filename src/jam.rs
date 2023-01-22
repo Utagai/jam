@@ -25,7 +25,7 @@ impl From<&TargetCfg> for Target {
         return Target {
             name: value.name.clone(),
             chord: value
-                .shortname
+                .chord
                 .clone()
                 .map_or(Chord::from_name(&value.name), |shortname| {
                     Chord::from_shortname(&shortname)
@@ -267,7 +267,7 @@ mod tests {
             pub fn lone(name: &str) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    shortname: None,
+                    chord: None,
                     help: None,
                     cmd: Some(String::from("blah")),
                     targets: None,
@@ -278,7 +278,7 @@ mod tests {
             pub fn dep(name: &str, deps: Vec<&str>) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    shortname: None,
+                    chord: None,
                     help: None,
                     cmd: None,
                     targets: None,
@@ -289,7 +289,7 @@ mod tests {
             pub fn sub(name: &str, subs: Vec<TargetCfg>) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    shortname: None,
+                    chord: None,
                     help: None,
                     cmd: None,
                     targets: Some(subs),
@@ -541,7 +541,7 @@ mod tests {
             fn override_respected() {
                 let jam = get_jam(vec![TargetCfg {
                     name: String::from("foo"),
-                    shortname: Some(String::from("x")),
+                    chord: Some(String::from("x")),
                     help: None,
                     cmd: Some(String::from("blah")),
                     targets: None,
@@ -599,7 +599,7 @@ mod tests {
                 check_jam_err(
                         vec![TargetCfg {
                             name: String::from("foo"),
-                            shortname: None,
+                            chord: None,
                             help: None,
                             cmd: None,
                             targets: None,

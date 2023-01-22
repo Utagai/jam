@@ -10,7 +10,7 @@ pub struct TargetCfg {
     // time after serialization.  Plus, the reconciliation logic
     // likely gets simpler if it can work with String rather than
     // Option<String>.
-    pub shortname: Option<String>,
+    pub chord: Option<String>,
     pub help: Option<String>,
     // TODO: Should this still be optional even if we have linear task
     // definitions?
