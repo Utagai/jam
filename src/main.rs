@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
     println!("{:#?}", cfg);
 
-    let jam = Jam::parse(cfg);
+    let jam = Jam::parse(&cfg);
 
     return Ok(());
 }

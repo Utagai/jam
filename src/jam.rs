@@ -8,44 +8,36 @@ use radix_trie::{Trie, TrieKey};
 use crate::config::{Config, TargetCfg};
 
 // TODO: Exercise - can we use &str in any of these fields?
-struct Target {
-    name: String,
+struct Target<'a> {
+    name: &'a str,
     chord: Chord,
-    help: String,
-    cmd: Option<String>,
+    help: &'a str,
+    cmd: Option<&'a str>,
 }
 
-impl From<&TargetCfg> for Target {
-    fn from(value: &TargetCfg) -> Self {
-        // TODO: The clone() calls here may go away if we manage to
-        // use &str in the TargetCfg instead...  Right now they are all
-        // String, which we can't take without moving or
-        // cloning. Moving can't be done here since we are From'ing
-        // from a shared reference, so we have to clone.
+impl<'a> From<&'a TargetCfg> for Target<'a> {
+    fn from(cfg: &'a TargetCfg) -> Self {
         return Target {
-            name: value.name.clone(),
-            chord: value
+            name: &cfg.name,
+            chord: cfg
                 .chord_str
-                .clone()
-                .map_or(Chord::from_name(&value.name), |chord_str| {
+                .as_deref()
+                .map_or(Chord::from_name(&cfg.name), |chord_str| {
                     Chord::from_shortname(&chord_str)
                 }),
-            help: value
-                .help
-                .clone()
-                .unwrap_or(String::from("no help provided")),
-            cmd: value.cmd.clone(),
+            help: cfg.help.as_deref().unwrap_or("no help provided"),
+            cmd: cfg.cmd.as_deref(),
         };
     }
 }
 
 type NIdx = u32;
 
-pub struct Jam {
+pub struct Jam<'a> {
     // TODO: We should be able to bind the type parameter of NodeIndex
     // to the corresponding type parameter in Dag.
     root_targets: Vec<NodeIndex<NIdx>>,
-    dag: Dag<Target, NIdx>,
+    dag: Dag<Target<'a>, NIdx>,
     chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
 }
 
@@ -103,8 +95,8 @@ impl TrieKey for Chord {
     }
 }
 
-impl Jam {
-    pub fn parse(cfg: Config) -> Result<Jam> {
+impl<'a> Jam<'a> {
+    pub fn parse(cfg: &'a Config) -> Result<Jam<'a>> {
         let mut exec_dag: Dag<Target, NIdx> = Dag::new();
         let mut node_idxes: HashMap<String, NodeIndex<NIdx>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
@@ -151,6 +143,8 @@ impl Jam {
 
                 let target = Target::from(target_cfg);
                 let target_chord = target.chord.clone();
+                // TODO: I don't think we need to do this.
+                let target_name = String::from(target.name);
 
                 let node_idx = exec_dag.add_node(target);
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
@@ -163,18 +157,18 @@ impl Jam {
                     root_targets.push(node_idx.clone());
                 }
                 if let Some(targets) = &target_cfg.targets {
-                    for subtarget in targets {
+                    for subtarget in targets.into_iter() {
+                        deps.push((target_name.clone(), subtarget.name.clone()));
                         target_queue.push_back(subtarget);
-                        deps.push((target_cfg.name.clone(), subtarget.name.clone()))
                     }
                 }
 
                 if let Some(target_deps) = &target_cfg.deps {
                     for dep in target_deps {
-                        deps.push((target_cfg.name.clone(), dep.clone()));
+                        deps.push((target_name.clone(), dep.clone()));
                     }
                 }
-                node_idxes.insert(target_cfg.name.clone(), node_idx);
+                node_idxes.insert(target_name.clone(), node_idx);
             }
         }
 
