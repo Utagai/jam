@@ -52,6 +52,7 @@ pub struct Jam {
     // to the corresponding type parameter in Dag.
     roots: Vec<NodeIndex<u32>>,
     exec_dag: Dag<Target, u32>,
+    trie: Trie<Chord, Vec<NodeIndex<u32>>>,
 }
 
 #[derive(Eq)]
@@ -89,7 +90,7 @@ impl Jam {
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
         // we currently have for finding a Target given a target_name.
-        let mut trie: Trie<Chord, NodeIndex<u32>> = Trie::new();
+        let mut trie: Trie<Chord, Vec<NodeIndex<u32>>> = Trie::new();
 
         target_queue.extend(cfg.targets.iter());
 
@@ -134,18 +135,9 @@ impl Jam {
                         .map(|note| String::from(note))
                         .collect(),
                 );
+
                 let node_idx = exec_dag.add_node(target);
-                if let Some(conflict_target_name) = trie.get(&target_chord) {
-                    bail!(
-                        "shortname conflict: '{}' (for '{}') is already equivalent to '{}'",
-                        target_chord,
-                        target_cfg.name,
-                        exec_dag[*conflict_target_name].name,
-                    );
-                } else if trie.subtrie(&target_chord).is_some() && target_cfg.cmd.is_some() {
-                    bail!("shortname conflict: '{}' (for '{}') is executable and subsumed by another target", target_chord, target_cfg.name)
-                }
-                trie.insert(target_chord, node_idx);
+                trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
                 if iterating_roots {
                     roots.push(node_idx.clone());
                 }
@@ -179,7 +171,11 @@ impl Jam {
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
         }
 
-        Ok(Jam { roots, exec_dag })
+        Ok(Jam {
+            roots,
+            exec_dag,
+            trie,
+        })
     }
 
     fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
@@ -214,7 +210,7 @@ mod tests {
                     .flatten()
             }
 
-            fn get_target(&self, target_name: &str) -> Option<&Target> {
+            fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
                 self.roots
                     .iter()
                     .map(|root| self.node_has_target(root, target_name))
@@ -223,8 +219,12 @@ mod tests {
                     .map(|node_idx| &self.exec_dag[node_idx])
             }
 
+            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<u32>>> {
+                self.trie.get(&chord)
+            }
+
             fn has_target(&self, target_name: &str) -> bool {
-                self.get_target(target_name).is_some()
+                self.get_target_by_name(target_name).is_some()
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
@@ -440,14 +440,20 @@ mod tests {
         mod shortnames {
             use super::*;
 
+            impl Chord {
+                fn new(notes: Vec<&str>) -> Chord {
+                    Chord(notes.into_iter().map(|note| String::from(note)).collect())
+                }
+            }
+
             #[test]
             fn automatic_of_single_word_is_first_char() {
                 let jam = get_jam(vec![target::lone("foo")]);
                 assert_eq!(
-                    jam.get_target("foo")
-                        .expect("expected to find the 'foo' target")
-                        .shortname,
-                    "f"
+                    jam.get_targets_by_chord(Chord::new(vec!["f"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
                 )
             }
 
@@ -455,22 +461,65 @@ mod tests {
             fn automatic_of_double_word_is_first_char() {
                 let jam = get_jam(vec![target::lone("foo-bar")]);
                 assert_eq!(
-                    jam.get_target("foo-bar")
-                        .expect("expected to find the 'foo' target")
-                        .shortname,
-                    "f-b"
-                )
+                    jam.get_targets_by_chord(Chord::new(vec!["f", "b"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
             }
 
             #[test]
             fn automatic_of_multi_word_is_first_char() {
                 let jam = get_jam(vec![target::lone("foo-bar-baz-quux")]);
                 assert_eq!(
-                    jam.get_target("foo-bar-baz-quux")
-                        .expect("expected to find the 'foo' target")
-                        .shortname,
-                    "f-b-b-q"
-                )
+                    jam.get_targets_by_chord(Chord::new(vec!["f", "b", "b", "q"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
+            }
+
+            #[test]
+            fn automatic_of_multiple_non_conflicting_targets() {
+                let jam = get_jam(vec![
+                    target::lone("foo"),
+                    target::lone("bar"),
+                    target::lone("quux"),
+                ]);
+                assert_eq!(
+                    jam.get_targets_by_chord(Chord::new(vec!["f"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
+                assert_eq!(
+                    jam.get_targets_by_chord(Chord::new(vec!["b"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
+                assert_eq!(
+                    jam.get_targets_by_chord(Chord::new(vec!["q"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
+            }
+
+            #[test]
+            fn automatic_of_multiple_conflicting_targets_no_reconciliation() {
+                let jam = get_jam(vec![
+                    target::lone("bar"),
+                    target::lone("baz"),
+                    target::lone("bam"),
+                    target::lone("barr"),
+                ]);
+                assert_eq!(
+                    jam.get_targets_by_chord(Chord::new(vec!["b"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    4,
+                );
             }
 
             #[test]
@@ -484,8 +533,8 @@ mod tests {
                     deps: None,
                 }]);
                 assert_eq!(
-                    jam.get_target("foo")
-                        .expect("expected to find the 'foo' target")
+                    jam.get_target_by_name("foo")
+                        .expect("expected to find the target")
                         .shortname,
                     "x"
                 )
