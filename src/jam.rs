@@ -389,43 +389,46 @@ mod tests {
                 );
             }
 
-            mod dupes {}
-            #[test]
-            fn target_names_same_level() {
-                check_jam_err(
-                    vec![target::lone("foo"), target::lone("foo")],
-                    "duplicate target name: 'foo'",
-                );
-            }
+            mod duped_target_name {
+                use super::*;
 
-            #[test]
-            fn target_names_diff_level() {
-                check_jam_err(
-                    vec![
-                        target::sub("foo", vec![target::lone("bar")]),
-                        target::lone("bar"),
-                    ],
-                    "duplicate target name: 'bar'",
-                );
-            }
+                #[test]
+                fn same_level() {
+                    check_jam_err(
+                        vec![target::lone("foo"), target::lone("foo")],
+                        "duplicate target name: 'foo'",
+                    );
+                }
 
-            #[test]
-            fn target_names_child_parent() {
-                check_jam_err(
-                    vec![target::sub("foo", vec![target::lone("foo")])],
-                    "duplicate target name: 'foo'",
-                );
-            }
+                #[test]
+                fn diff_level() {
+                    check_jam_err(
+                        vec![
+                            target::sub("foo", vec![target::lone("bar")]),
+                            target::lone("bar"),
+                        ],
+                        "duplicate target name: 'bar'",
+                    );
+                }
 
-            #[test]
-            fn target_names_grand_child_parent() {
-                check_jam_err(
-                    vec![target::sub(
-                        "foo",
-                        vec![target::sub("bar", vec![target::lone("foo")])],
-                    )],
-                    "duplicate target name: 'foo'",
-                );
+                #[test]
+                fn child_parent() {
+                    check_jam_err(
+                        vec![target::sub("foo", vec![target::lone("foo")])],
+                        "duplicate target name: 'foo'",
+                    );
+                }
+
+                #[test]
+                fn grand_child_parent() {
+                    check_jam_err(
+                        vec![target::sub(
+                            "foo",
+                            vec![target::sub("bar", vec![target::lone("foo")])],
+                        )],
+                        "duplicate target name: 'foo'",
+                    );
+                }
             }
         }
     }
