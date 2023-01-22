@@ -214,79 +214,87 @@ mod tests {
             assert_eq!(jam.exec_dag.edge_count(), deps.len());
         }
 
-        #[test]
-        fn single_target() {
-            let expected_target_name = "foo";
-            let jam = get_jam(vec![target::lone(expected_target_name)]);
-            verify_jam_dag(jam, vec![expected_target_name], vec![]);
-        }
+        mod nodeps {
+            use super::*;
 
-        #[test]
-        fn zero_targets() {
-            let jam = get_jam(vec![]);
-            verify_jam_dag(jam, vec![], vec![]);
-        }
+            #[test]
+            fn single_target() {
+                let expected_target_name = "foo";
+                let jam = get_jam(vec![target::lone(expected_target_name)]);
+                verify_jam_dag(jam, vec![expected_target_name], vec![]);
+            }
 
-        #[test]
-        fn multiple_targets() {
-            let expected_target_names = vec!["foo", "bar", "baz"];
-            let jam = get_jam(
+            #[test]
+            fn zero_targets() {
+                let jam = get_jam(vec![]);
+                verify_jam_dag(jam, vec![], vec![]);
+            }
+
+            #[test]
+            fn multiple_targets() {
+                let expected_target_names = vec!["foo", "bar", "baz"];
+                let jam = get_jam(
+                    expected_target_names
+                        .iter()
+                        .map(|name| target::lone(name))
+                        .collect(),
+                );
                 expected_target_names
                     .iter()
-                    .map(|name| target::lone(name))
-                    .collect(),
-            );
-            expected_target_names
-                .iter()
-                .for_each(|name| assert!(jam.has_target(&name)));
-            verify_jam_dag(jam, expected_target_names, vec![]);
+                    .for_each(|name| assert!(jam.has_target(&name)));
+                verify_jam_dag(jam, expected_target_names, vec![]);
+            }
         }
 
-        #[test]
-        fn single_dependency() {
-            let jam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
-            verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
-        }
+        mod deps {
+            use super::*;
 
-        #[test]
-        fn one_target_two_dependents() {
-            let jam = get_jam(vec![
-                target::lone("bar"),
-                target::lone("baz"),
-                target::dep("foo", vec!["bar", "baz"]),
-            ]);
-            verify_jam_dag(
-                jam,
-                vec!["foo", "bar", "baz"],
-                vec![("foo", "bar"), ("foo", "baz")],
-            );
-        }
+            #[test]
+            fn single_dependency() {
+                let jam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
+                verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+            }
 
-        #[test]
-        fn single_dependency_but_dependee_defined_first() {
-            let jam = get_jam(vec![target::dep("foo", vec!["bar"]), target::lone("bar")]);
-            verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
-        }
+            #[test]
+            fn one_target_two_dependents() {
+                let jam = get_jam(vec![
+                    target::lone("bar"),
+                    target::lone("baz"),
+                    target::dep("foo", vec!["bar", "baz"]),
+                ]);
+                verify_jam_dag(
+                    jam,
+                    vec!["foo", "bar", "baz"],
+                    vec![("foo", "bar"), ("foo", "baz")],
+                );
+            }
 
-        #[test]
-        fn two_targets_one_dep_each() {
-            let jam = get_jam(vec![
-                target::lone("c"),
-                target::lone("d"),
-                target::dep("a", vec!["c"]),
-                target::dep("b", vec!["d"]),
-            ]);
-            verify_jam_dag(jam, vec!["a", "b", "c", "d"], vec![("a", "c"), ("b", "d")]);
-        }
+            #[test]
+            fn single_dependency_but_dependee_defined_first() {
+                let jam = get_jam(vec![target::dep("foo", vec!["bar"]), target::lone("bar")]);
+                verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+            }
 
-        #[test]
-        fn two_targets_share_a_dep() {
-            let jam = get_jam(vec![
-                target::lone("c"),
-                target::dep("a", vec!["c"]),
-                target::dep("b", vec!["c"]),
-            ]);
-            verify_jam_dag(jam, vec!["a", "b", "c"], vec![("a", "c"), ("b", "c")]);
+            #[test]
+            fn two_targets_one_dep_each() {
+                let jam = get_jam(vec![
+                    target::lone("c"),
+                    target::lone("d"),
+                    target::dep("a", vec!["c"]),
+                    target::dep("b", vec!["d"]),
+                ]);
+                verify_jam_dag(jam, vec!["a", "b", "c", "d"], vec![("a", "c"), ("b", "d")]);
+            }
+
+            #[test]
+            fn two_targets_share_a_dep() {
+                let jam = get_jam(vec![
+                    target::lone("c"),
+                    target::dep("a", vec!["c"]),
+                    target::dep("b", vec!["c"]),
+                ]);
+                verify_jam_dag(jam, vec!["a", "b", "c"], vec![("a", "c"), ("b", "c")]);
+            }
         }
     }
 }
