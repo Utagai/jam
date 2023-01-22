@@ -102,7 +102,7 @@ impl Jam {
                 let target_cfg: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
                 println!("Looking at target: {}", target_cfg.name);
 
-                // Target name validations:
+                // Target validations:
                 // TODO: This should be validating short names too.
                 if target_cfg.name.len() == 0 {
                     bail!("cannot have an empty target name")
@@ -118,6 +118,11 @@ impl Jam {
                     bail!("cannot have a '?' in a target name: '{}'", target_cfg.name)
                 } else if node_idxes.contains_key(&target_cfg.name) {
                     bail!("duplicate target name: '{}'", target_cfg.name)
+                } else if target_cfg.deps.is_none()
+                    && target_cfg.targets.is_none()
+                    && target_cfg.cmd.is_none()
+                {
+                    bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", target_cfg.name)
                 }
 
                 let target = Target::from(target_cfg);
@@ -249,7 +254,7 @@ mod tests {
                     name: String::from(name),
                     shortname: None,
                     help: None,
-                    cmd: None,
+                    cmd: Some(String::from("blah")),
                     targets: None,
                     deps: None,
                 }
@@ -474,7 +479,7 @@ mod tests {
                     name: String::from("foo"),
                     shortname: Some(String::from("x")),
                     help: None,
-                    cmd: None,
+                    cmd: Some(String::from("blah")),
                     targets: None,
                     deps: None,
                 }]);
@@ -523,6 +528,21 @@ mod tests {
                     ],
                     "reference to nonexistent dep: I DO NOT EXIST",
                 );
+            }
+
+            #[test]
+            fn no_sub_or_deps_or_cmd() {
+                check_jam_err(
+                        vec![TargetCfg {
+                            name: String::from("foo"),
+                            shortname: None,
+                            help: None,
+                            cmd: None,
+                            targets: None,
+                            deps: None,
+                        }],
+                        "a command without an executable command must have dependencies or subtargets, but 'foo' does not",
+                    )
             }
 
             mod duped_target_name {
