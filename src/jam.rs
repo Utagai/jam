@@ -25,10 +25,10 @@ impl From<&TargetCfg> for Target {
         return Target {
             name: value.name.clone(),
             chord: value
-                .chord
+                .chord_str
                 .clone()
-                .map_or(Chord::from_name(&value.name), |shortname| {
-                    Chord::from_shortname(&shortname)
+                .map_or(Chord::from_name(&value.name), |chord_str| {
+                    Chord::from_shortname(&chord_str)
                 }),
             help: value
                 .help
@@ -267,7 +267,7 @@ mod tests {
             pub fn lone(name: &str) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    chord: None,
+                    chord_str: None,
                     help: None,
                     cmd: Some(String::from("blah")),
                     targets: None,
@@ -278,7 +278,7 @@ mod tests {
             pub fn dep(name: &str, deps: Vec<&str>) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    chord: None,
+                    chord_str: None,
                     help: None,
                     cmd: None,
                     targets: None,
@@ -289,7 +289,7 @@ mod tests {
             pub fn sub(name: &str, subs: Vec<TargetCfg>) -> TargetCfg {
                 TargetCfg {
                     name: String::from(name),
-                    chord: None,
+                    chord_str: None,
                     help: None,
                     cmd: None,
                     targets: Some(subs),
@@ -541,7 +541,7 @@ mod tests {
             fn override_respected() {
                 let jam = get_jam(vec![TargetCfg {
                     name: String::from("foo"),
-                    chord: Some(String::from("x")),
+                    chord_str: Some(String::from("x")),
                     help: None,
                     cmd: Some(String::from("blah")),
                     targets: None,
@@ -599,7 +599,7 @@ mod tests {
                 check_jam_err(
                         vec![TargetCfg {
                             name: String::from("foo"),
-                            chord: None,
+                            chord_str: None,
                             help: None,
                             cmd: None,
                             targets: None,
