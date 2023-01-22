@@ -197,6 +197,10 @@ mod tests {
             Jam::parse(cfg).expect("expected no errors from parsing")
         }
 
+        // TODO: We can go a step further and actually construct the
+        // Jam instance here ourselves based on targets + deps, but it
+        // would require more complex logic to derive a DAG from the
+        // two arguments and could be error prone... maybe later.
         fn verify_jam_dag(jam: Jam, targets: Vec<&str>, deps: Vec<(&str, &str)>) {
             for target in &targets {
                 assert!(jam.has_target(target));
@@ -240,17 +244,49 @@ mod tests {
 
         #[test]
         fn single_dependency() {
-            let dependee_name = "foo";
-            let dependent_name = "bar";
+            let jam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
+            verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+        }
+
+        #[test]
+        fn one_target_two_dependents() {
             let jam = get_jam(vec![
-                target::lone(dependent_name),
-                target::dep(dependee_name, vec!["bar"]),
+                target::lone("bar"),
+                target::lone("baz"),
+                target::dep("foo", vec!["bar", "baz"]),
             ]);
             verify_jam_dag(
                 jam,
-                vec![dependee_name, dependent_name],
-                vec![(dependee_name, dependent_name)],
+                vec!["foo", "bar", "baz"],
+                vec![("foo", "bar"), ("foo", "baz")],
             );
+        }
+
+        #[test]
+        fn single_dependency_but_dependee_defined_first() {
+            let jam = get_jam(vec![target::dep("foo", vec!["bar"]), target::lone("bar")]);
+            verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+        }
+
+        #[test]
+        fn two_targets_one_dep_each() {
+            let jam = get_jam(vec![
+                target::lone("c"),
+                target::lone("d"),
+                target::dep("a", vec!["c"]),
+                target::dep("b", vec!["d"]),
+            ]);
+            verify_jam_dag(jam, vec!["a", "b", "c", "d"], vec![("a", "c"), ("b", "d")]);
+        }
+
+        #[test]
+        fn two_targets_share_a_dep() {
+            let jam = get_jam(vec![
+                target::lone("c"),
+                target::dep("a", vec!["c"]),
+                target::dep("b", vec!["c"]),
+            ]);
+            verify_jam_dag(jam, vec!["a", "b", "c"], vec![("a", "c"), ("b", "c")]);
         }
     }
 }
