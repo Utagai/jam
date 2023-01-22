@@ -43,9 +43,6 @@ pub struct Jam {
 impl Jam {
     pub fn parse(cfg: Config) -> Result<Jam> {
         let mut exec_dag: Dag<Target, u32> = Dag::new();
-        // TODO: I wonder if we can use NodeIndex<String> and just use
-        // the target name to find a particular node, making the
-        // node_idxes map unnecessary?
         let mut node_idxes: HashMap<String, NodeIndex<u32>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
         let mut deps: Vec<(String, String)> = Vec::new();
@@ -87,20 +84,15 @@ impl Jam {
 
         // With their dependencies recorded, now add edges to the DAG to represent them:
         for dep in deps {
-            println!("handling dep: {:?}", dep);
             let dependee_idx = node_idxes
                 .get(&dep.0)
-                .ok_or(Jam::nonexistent_dep_err(dep.0))?;
+                .ok_or(Jam::nonexistent_dep_err(dep.0.clone()))?;
             let dependent_idx = node_idxes
                 .get(&dep.1)
-                .ok_or(Jam::nonexistent_dep_err(dep.1))?;
-            // TODO: So we are relying on default `?` behavior to
-            // propagate a cycle detection error here, but we likely
-            // want to catch this and return a better error.  I
-            // believe anyhow may have a way of annotating this error
-            // or maybe even replacing it...  Or perhaps we do need to
-            // get thiserror.
-            exec_dag.add_edge(*dependee_idx, *dependent_idx, 0)?;
+                .ok_or(Jam::nonexistent_dep_err(dep.1.clone()))?;
+            exec_dag
+                .add_edge(*dependee_idx, *dependent_idx, 0)
+                .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
         }
 
         Ok(Jam { roots, exec_dag })
@@ -369,7 +361,7 @@ mod tests {
                         target::dep("baz", vec!["foo"]),
                         target::dep("foo", vec!["baz"]),
                     ],
-                    "WouldCycle",
+                    "'foo' -> 'baz' creates a cycle",
                 );
             }
 
@@ -382,7 +374,7 @@ mod tests {
                         target::dep("bar", vec!["quux"]),
                         target::dep("quux", vec!["baz"]),
                     ],
-                    "WouldCycle",
+                    "'quux' -> 'baz' creates a cycle",
                 );
             }
 
