@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use anyhow::{anyhow, bail, Result};
 use daggy::Walker;
 use daggy::{Dag, NodeIndex};
+use radix_trie::{Trie, TrieKey};
 
 use crate::config::{Config, TargetCfg};
 
@@ -53,6 +54,30 @@ pub struct Jam {
     exec_dag: Dag<Target, u32>,
 }
 
+#[derive(Eq)]
+struct Chord(Vec<String>);
+
+impl PartialEq for Chord {
+    fn eq(&self, other: &Self) -> bool {
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(true, |acc, (s, o)| acc && s == o)
+    }
+}
+
+impl std::fmt::Display for Chord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0.join("-"))
+    }
+}
+
+impl TrieKey for Chord {
+    fn encode_bytes(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|s| s.encode_bytes()).collect()
+    }
+}
+
 impl Jam {
     pub fn parse(cfg: Config) -> Result<Jam> {
         let mut exec_dag: Dag<Target, u32> = Dag::new();
@@ -60,6 +85,11 @@ impl Jam {
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
         let mut deps: Vec<(String, String)> = Vec::new();
         let mut roots: Vec<NodeIndex<u32>> = Vec::new();
+        // TODO: We should flip it so that the Trie stores the Target,
+        // and the Dag stores the target chord to index into the trie.
+        // This would be more efficient and we won't need the helpers
+        // we currently have for finding a Target given a target_name.
+        let mut trie: Trie<Chord, NodeIndex<u32>> = Trie::new();
 
         target_queue.extend(cfg.targets.iter());
 
@@ -69,44 +99,64 @@ impl Jam {
         while !target_queue.is_empty() {
             let queue_len = target_queue.len();
             for _ in 0..queue_len {
-                let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
-                println!("Looking at target: {}", target.name);
+                let target_cfg: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
+                println!("Looking at target: {}", target_cfg.name);
 
                 // Target name validations:
-                if target.name.len() == 0 {
+                // TODO: This should be validating short names too.
+                if target_cfg.name.len() == 0 {
                     bail!("cannot have an empty target name")
-                } else if target.name.contains(".") {
+                } else if target_cfg.name.contains(".") {
                     // TODO: This and its sibling, '?', should have
                     // its checks changed to be more permissive --
                     // they're only not allowed _after_ a delimiter,
                     // as that's when they cause ambiguity. Anywhere
                     // else is actually fine. e.g. foo.bar-baz is
                     // actually fine!
-                    bail!("cannot have a '.' in a target name: '{}'", target.name)
-                } else if target.name.contains("?") {
-                    bail!("cannot have a '?' in a target name: '{}'", target.name)
+                    bail!("cannot have a '.' in a target name: '{}'", target_cfg.name)
+                } else if target_cfg.name.contains("?") {
+                    bail!("cannot have a '?' in a target name: '{}'", target_cfg.name)
+                } else if node_idxes.contains_key(&target_cfg.name) {
+                    bail!("duplicate target name: '{}'", target_cfg.name)
                 }
 
-                let node_idx = exec_dag.add_node(Target::from(target));
+                let target = Target::from(target_cfg);
+                let target_chord = Chord(
+                    target
+                        .shortname
+                        .clone()
+                        .split("-")
+                        .map(|note| String::from(note))
+                        .collect(),
+                );
+                let node_idx = exec_dag.add_node(target);
+                if let Some(conflict_target_name) = trie.get(&target_chord) {
+                    bail!(
+                        "shortname conflict: '{}' (for '{}') is already equivalent to '{}'",
+                        target_chord,
+                        target_cfg.name,
+                        exec_dag[*conflict_target_name].name,
+                    );
+                } else if trie.subtrie(&target_chord).is_some() && target_cfg.cmd.is_some() {
+                    bail!("shortname conflict: '{}' (for '{}') is executable and subsumed by another target", target_chord, target_cfg.name)
+                }
+                trie.insert(target_chord, node_idx);
                 if iterating_roots {
                     roots.push(node_idx.clone());
                 }
-                if let Some(targets) = &target.targets {
+                if let Some(targets) = &target_cfg.targets {
                     for subtarget in targets {
                         target_queue.push_back(subtarget);
-                        deps.push((target.name.clone(), subtarget.name.clone()))
+                        deps.push((target_cfg.name.clone(), subtarget.name.clone()))
                     }
                 }
 
-                if let Some(target_deps) = &target.deps {
+                if let Some(target_deps) = &target_cfg.deps {
                     for dep in target_deps {
-                        deps.push((target.name.clone(), dep.clone()));
+                        deps.push((target_cfg.name.clone(), dep.clone()));
                     }
                 }
-                if node_idxes.contains_key(&target.name) {
-                    bail!("duplicate target name: '{}'", target.name)
-                }
-                node_idxes.insert(target.name.clone(), node_idx);
+                node_idxes.insert(target_cfg.name.clone(), node_idx);
             }
             iterating_roots = false; // TODO: Cleaner way to write this?
         }
@@ -289,7 +339,7 @@ mod tests {
 
             #[test]
             fn multiple_targets() {
-                let expected_target_names = vec!["foo", "bar", "baz"];
+                let expected_target_names = vec!["foo", "bar", "quux"];
                 let jam = get_jam(
                     expected_target_names
                         .iter()
@@ -321,18 +371,18 @@ mod tests {
             fn one_target_two_dependents() {
                 let depjam = get_jam(vec![
                     target::lone("bar"),
-                    target::lone("baz"),
-                    target::dep("foo", vec!["bar", "baz"]),
+                    target::lone("quux"),
+                    target::dep("foo", vec!["bar", "quux"]),
                 ]);
 
                 let subjam = get_jam(vec![target::sub(
                     "foo",
-                    vec![target::lone("bar"), target::lone("baz")],
+                    vec![target::lone("bar"), target::lone("quux")],
                 )]);
                 verify_jam_dags(
                     vec![depjam, subjam],
-                    &vec!["foo", "bar", "baz"],
-                    &vec![("foo", "bar"), ("foo", "baz")],
+                    &vec!["foo", "bar", "quux"],
+                    &vec![("foo", "bar"), ("foo", "quux")],
                 );
             }
 
@@ -456,8 +506,8 @@ mod tests {
                 check_jam_err(
                     vec![
                         target::dep("baz", vec!["foo"]),
-                        target::dep("foo", vec!["bar"]),
-                        target::dep("bar", vec!["quux"]),
+                        target::dep("foo", vec!["corge"]),
+                        target::dep("corge", vec!["quux"]),
                         target::dep("quux", vec!["baz"]),
                     ],
                     "'quux' -> 'baz' creates a cycle",
