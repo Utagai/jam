@@ -116,22 +116,45 @@ mod tests {
         use crate::config::Options;
 
         impl Jam {
-            fn node_has_target(&self, nidx: &NodeIndex<u32>, target_name: &str) -> bool {
-                self.exec_dag[*nidx].name == target_name
-                    || self
-                        .exec_dag
-                        .children(*nidx)
-                        .iter(&self.exec_dag)
-                        .any(|(_, n)| {
-                            self.exec_dag[n].name == target_name
-                                || self.node_has_target(&n, target_name)
-                        })
+            fn node_has_target(
+                &self,
+                nidx: &NodeIndex<u32>,
+                target_name: &str,
+            ) -> Option<NodeIndex<u32>> {
+                if self.exec_dag[*nidx].name == target_name {
+                    return Some(*nidx);
+                }
+
+                self.exec_dag
+                    .children(*nidx)
+                    .iter(&self.exec_dag)
+                    .map(|(_, n)| self.node_has_target(&n, target_name))
+                    .find(|n| n.is_some())
+                    .flatten()
             }
 
             fn has_target(&self, target_name: &str) -> bool {
                 for root in &self.roots {
                     println!("looking @ {:?}", root);
-                    if self.node_has_target(root, target_name) {
+                    if self.node_has_target(root, target_name).is_some() {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
+                for root in &self.roots {
+                    let depender_idx = self.node_has_target(root, dependee);
+                    let dependent_idx = self.node_has_target(root, dependent);
+                    if match depender_idx.zip(dependent_idx) {
+                        Some((depender_idx, dependent_idx)) => self
+                            .exec_dag
+                            .find_edge(depender_idx, dependent_idx)
+                            .is_some(),
+                        None => false,
+                    } {
                         return true;
                     }
                 }
@@ -140,14 +163,29 @@ mod tests {
             }
         }
 
-        fn lone(name: &str) -> TargetCfg {
-            TargetCfg {
-                name: String::from(name),
-                shortname: None,
-                help: None,
-                cmd: None,
-                targets: None,
-                deps: None,
+        mod target {
+            use super::*;
+
+            pub fn lone(name: &str) -> TargetCfg {
+                TargetCfg {
+                    name: String::from(name),
+                    shortname: None,
+                    help: None,
+                    cmd: None,
+                    targets: None,
+                    deps: None,
+                }
+            }
+
+            pub fn dep(name: &str, deps: Vec<&str>) -> TargetCfg {
+                TargetCfg {
+                    name: String::from(name),
+                    shortname: None,
+                    help: None,
+                    cmd: None,
+                    targets: None,
+                    deps: Some(deps.iter().map(|dep| String::from(*dep)).collect()),
+                }
             }
         }
 
@@ -156,7 +194,7 @@ mod tests {
             let expected_target_name = "foo";
             let cfg = Config {
                 options: Options {},
-                targets: vec![lone(expected_target_name)],
+                targets: vec![target::lone(expected_target_name)],
             };
             let jam = Jam::parse(cfg).expect("expected no errors from parsing");
             assert!(jam.has_target(expected_target_name));
@@ -182,7 +220,7 @@ mod tests {
                 options: Options {},
                 targets: expected_target_names
                     .iter()
-                    .map(|name| lone(name))
+                    .map(|name| target::lone(name))
                     .collect(),
             };
             let jam = Jam::parse(cfg).expect("expected no errors from parsing");
@@ -191,6 +229,25 @@ mod tests {
                 .for_each(|name| assert!(jam.has_target(&name)));
             assert_eq!(jam.exec_dag.node_count(), 3);
             assert_eq!(jam.exec_dag.edge_count(), 0);
+        }
+
+        #[test]
+        fn single_dependency() {
+            let dependee_name = "foo";
+            let dependent_name = "bar";
+            let cfg = Config {
+                options: Options {},
+                targets: vec![
+                    target::lone(dependent_name),
+                    target::dep(dependee_name, vec!["bar"]),
+                ],
+            };
+            let jam = Jam::parse(cfg).expect("expected no errors from parsing");
+            assert!(jam.has_target(dependee_name));
+            assert!(jam.has_target(dependent_name));
+            assert_eq!(jam.exec_dag.node_count(), 2);
+            assert_eq!(jam.exec_dag.edge_count(), 1);
+            assert!(jam.has_dep(dependee_name, dependent_name));
         }
     }
 }
