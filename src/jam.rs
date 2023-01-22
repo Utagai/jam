@@ -82,6 +82,7 @@ impl Jam {
                         deps.push((target.name.clone(), dep.clone()));
                     }
                 }
+                println!("insert node into map: {}", target.name);
                 node_idxes.insert(target.name.clone(), node_idx);
             }
             iterating_roots = false; // TODO: Cleaner way to write this?
@@ -89,6 +90,7 @@ impl Jam {
 
         // With their dependencies recorded, now add edges to the DAG to represent them:
         for dep in deps {
+            println!("handling dep: {:?}", dep);
             // TODO: So we are relying on default `?` behavior to
             // propagate a cycle detection error here, but we likely
             // want to catch this and return a better error.  I
@@ -206,6 +208,18 @@ mod tests {
                 targets,
             };
             Jam::parse(cfg).expect("expected no errors from parsing")
+        }
+
+        fn get_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
+            let cfg = Config {
+                options: Options {},
+                targets,
+            };
+            if let Err(err) = Jam::parse(cfg) {
+                assert!(format!("{:?}", err).contains(expected_err))
+            } else {
+                panic!("expected an error from parsing, but got none")
+            }
         }
 
         // TODO: We can go a step further and actually construct the
@@ -338,6 +352,23 @@ mod tests {
                     vec![depjam, subjam],
                     &vec!["a", "b", "c"],
                     &vec![("a", "c"), ("b", "c")],
+                );
+            }
+        }
+
+        mod errors {
+            use super::*;
+
+            // TODO: A case for when a dep DNE.
+
+            #[test]
+            fn cycle() {
+                get_jam_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["baz"]),
+                    ],
+                    "WouldCycle",
                 );
             }
         }
