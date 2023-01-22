@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use anyhow::{anyhow, bail, Result};
-use daggy::{Dag, NodeIndex, Walker};
+use daggy::Walker;
+use daggy::{Dag, NodeIndex};
 
 use crate::config::{Config, TargetCfg};
 
@@ -11,6 +12,15 @@ struct Target {
     shortname: String,
     help: String,
     cmd: Option<String>,
+}
+
+fn name_to_short<T: AsRef<str>>(name: T) -> String {
+    // TODO: Eventually, this delimiter should be configured.
+    name.as_ref()
+        .split("-")
+        .map(|segment| segment.chars().nth(0).unwrap().to_string())
+        .collect::<Vec<String>>()
+        .join("-")
 }
 
 impl From<&TargetCfg> for Target {
@@ -23,7 +33,10 @@ impl From<&TargetCfg> for Target {
         return Target {
             name: value.name.clone(),
             // TODO: The shortname needs to be computed, but right now it is just the same as the long name.
-            shortname: value.shortname.clone().unwrap_or(value.name.clone()),
+            shortname: value
+                .shortname
+                .clone()
+                .unwrap_or(name_to_short(&value.name)),
             help: value
                 .help
                 .clone()
@@ -135,15 +148,17 @@ mod tests {
                     .flatten()
             }
 
-            fn has_target(&self, target_name: &str) -> bool {
-                for root in &self.roots {
-                    println!("looking @ {:?}", root);
-                    if self.node_has_target(root, target_name).is_some() {
-                        return true;
-                    }
-                }
+            fn get_target(&self, target_name: &str) -> Option<&Target> {
+                self.roots
+                    .iter()
+                    .map(|root| self.node_has_target(root, target_name))
+                    .find(|found_node| found_node.is_some())
+                    .flatten()
+                    .map(|node_idx| &self.exec_dag[node_idx])
+            }
 
-                return false;
+            fn has_target(&self, target_name: &str) -> bool {
+                self.get_target(target_name).is_some()
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
@@ -353,6 +368,61 @@ mod tests {
                     &vec!["a", "b", "c"],
                     &vec![("a", "c"), ("b", "c")],
                 );
+            }
+        }
+
+        mod shortnames {
+            use super::*;
+
+            #[test]
+            fn automatic_of_single_word_is_first_char() {
+                let jam = get_jam(vec![target::lone("foo")]);
+                assert_eq!(
+                    jam.get_target("foo")
+                        .expect("expected to find the 'foo' target")
+                        .shortname,
+                    "f"
+                )
+            }
+
+            #[test]
+            fn automatic_of_double_word_is_first_char() {
+                let jam = get_jam(vec![target::lone("foo-bar")]);
+                assert_eq!(
+                    jam.get_target("foo-bar")
+                        .expect("expected to find the 'foo' target")
+                        .shortname,
+                    "f-b"
+                )
+            }
+
+            #[test]
+            fn automatic_of_multi_word_is_first_char() {
+                let jam = get_jam(vec![target::lone("foo-bar-baz-quux")]);
+                assert_eq!(
+                    jam.get_target("foo-bar-baz-quux")
+                        .expect("expected to find the 'foo' target")
+                        .shortname,
+                    "f-b-b-q"
+                )
+            }
+
+            #[test]
+            fn override_respected() {
+                let jam = get_jam(vec![TargetCfg {
+                    name: String::from("foo"),
+                    shortname: Some(String::from("x")),
+                    help: None,
+                    cmd: None,
+                    targets: None,
+                    deps: None,
+                }]);
+                assert_eq!(
+                    jam.get_target("foo")
+                        .expect("expected to find the 'foo' target")
+                        .shortname,
+                    "x"
+                )
             }
         }
 
