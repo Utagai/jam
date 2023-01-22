@@ -118,7 +118,6 @@ impl Jam {
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
-        let mut iterating_roots = true;
         while !target_queue.is_empty() {
             let queue_len = target_queue.len();
             for _ in 0..queue_len {
@@ -153,7 +152,7 @@ impl Jam {
 
                 let node_idx = exec_dag.add_node(target);
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
-                if iterating_roots {
+                if roots.len() < queue_len {
                     roots.push(node_idx.clone());
                 }
                 if let Some(targets) = &target_cfg.targets {
@@ -170,7 +169,6 @@ impl Jam {
                 }
                 node_idxes.insert(target_cfg.name.clone(), node_idx);
             }
-            iterating_roots = false; // TODO: Cleaner way to write this?
         }
 
         // With their dependencies recorded, now add edges to the DAG to represent them:
