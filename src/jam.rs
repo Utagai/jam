@@ -10,18 +10,9 @@ use crate::config::{Config, TargetCfg};
 // TODO: Exercise - can we use &str in any of these fields?
 struct Target {
     name: String,
-    shortname: String,
+    chord: Chord,
     help: String,
     cmd: Option<String>,
-}
-
-fn name_to_short<T: AsRef<str>>(name: T) -> String {
-    // TODO: Eventually, this delimiter should be configured.
-    name.as_ref()
-        .split("-")
-        .map(|segment| segment.chars().nth(0).unwrap().to_string())
-        .collect::<Vec<String>>()
-        .join("-")
 }
 
 impl From<&TargetCfg> for Target {
@@ -33,11 +24,12 @@ impl From<&TargetCfg> for Target {
         // from a shared reference, so we have to clone.
         return Target {
             name: value.name.clone(),
-            // TODO: The shortname needs to be computed, but right now it is just the same as the long name.
-            shortname: value
+            chord: value
                 .shortname
                 .clone()
-                .unwrap_or(name_to_short(&value.name)),
+                .map_or(Chord::from_name(&value.name), |shortname| {
+                    Chord::from_shortname(&shortname)
+                }),
             help: value
                 .help
                 .clone()
@@ -58,6 +50,30 @@ pub struct Jam {
 #[derive(Eq)]
 struct Chord(Vec<String>);
 
+impl Chord {
+    fn from_name(name: &str) -> Chord {
+        Self::from_shortname(&Self::name_to_short(name))
+    }
+
+    fn from_shortname(shortname: &str) -> Chord {
+        Chord(
+            shortname
+                .split("-")
+                .map(|note| String::from(note))
+                .collect(),
+        )
+    }
+
+    fn name_to_short<T: AsRef<str>>(name: T) -> String {
+        // TODO: Eventually, this delimiter should be configured.
+        name.as_ref()
+            .split("-")
+            .map(|segment| segment.chars().nth(0).unwrap().to_string())
+            .collect::<Vec<String>>()
+            .join("-")
+    }
+}
+
 impl PartialEq for Chord {
     fn eq(&self, other: &Self) -> bool {
         self.0
@@ -70,6 +86,12 @@ impl PartialEq for Chord {
 impl std::fmt::Display for Chord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.join("-"))
+    }
+}
+
+impl Clone for Chord {
+    fn clone(&self) -> Self {
+        Chord(self.0.iter().map(|note| note.clone()).collect())
     }
 }
 
@@ -127,14 +149,7 @@ impl Jam {
                 }
 
                 let target = Target::from(target_cfg);
-                let target_chord = Chord(
-                    target
-                        .shortname
-                        .clone()
-                        .split("-")
-                        .map(|note| String::from(note))
-                        .collect(),
-                );
+                let target_chord = target.chord.clone();
 
                 let node_idx = exec_dag.add_node(target);
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
@@ -533,11 +548,11 @@ mod tests {
                     deps: None,
                 }]);
                 assert_eq!(
-                    jam.get_target_by_name("foo")
-                        .expect("expected to find the target")
-                        .shortname,
-                    "x"
-                )
+                    jam.get_targets_by_chord(Chord::new(vec!["x"]))
+                        .expect("expected to find the target by its expected chord")
+                        .len(),
+                    1,
+                );
             }
         }
 
