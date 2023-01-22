@@ -39,12 +39,14 @@ impl From<&TargetCfg> for Target {
     }
 }
 
+type NIdx = u32;
+
 pub struct Jam {
     // TODO: We should be able to bind the type parameter of NodeIndex
     // to the corresponding type parameter in Dag.
-    root_targets: Vec<NodeIndex<u32>>,
-    dag: Dag<Target, u32>,
-    chords: Trie<Chord, Vec<NodeIndex<u32>>>,
+    root_targets: Vec<NodeIndex<NIdx>>,
+    dag: Dag<Target, NIdx>,
+    chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
 }
 
 #[derive(Eq)]
@@ -103,16 +105,16 @@ impl TrieKey for Chord {
 
 impl Jam {
     pub fn parse(cfg: Config) -> Result<Jam> {
-        let mut exec_dag: Dag<Target, u32> = Dag::new();
-        let mut node_idxes: HashMap<String, NodeIndex<u32>> = HashMap::new();
+        let mut exec_dag: Dag<Target, NIdx> = Dag::new();
+        let mut node_idxes: HashMap<String, NodeIndex<NIdx>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
         let mut deps: Vec<(String, String)> = Vec::new();
-        let mut root_targets: Vec<NodeIndex<u32>> = Vec::new();
+        let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
         // we currently have for finding a Target given a target_name.
-        let mut trie: Trie<Chord, Vec<NodeIndex<u32>>> = Trie::new();
+        let mut trie: Trie<Chord, Vec<NodeIndex<NIdx>>> = Trie::new();
 
         target_queue.extend(cfg.targets.iter());
 
@@ -213,9 +215,9 @@ mod tests {
         impl Jam {
             fn node_has_target(
                 &self,
-                nidx: &NodeIndex<u32>,
+                nidx: &NodeIndex<NIdx>,
                 target_name: &str,
-            ) -> Option<NodeIndex<u32>> {
+            ) -> Option<NodeIndex<NIdx>> {
                 if self.dag[*nidx].name == target_name {
                     return Some(*nidx);
                 }
@@ -237,7 +239,7 @@ mod tests {
                     .map(|node_idx| &self.dag[node_idx])
             }
 
-            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<u32>>> {
+            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<NIdx>>> {
                 self.chords.get(&chord)
             }
 
@@ -250,10 +252,9 @@ mod tests {
                     let depender_idx = self.node_has_target(root, dependee);
                     let dependent_idx = self.node_has_target(root, dependent);
                     if match depender_idx.zip(dependent_idx) {
-                        Some((depender_idx, dependent_idx)) => self
-                            .dag
-                            .find_edge(depender_idx, dependent_idx)
-                            .is_some(),
+                        Some((depender_idx, dependent_idx)) => {
+                            self.dag.find_edge(depender_idx, dependent_idx).is_some()
+                        }
                         None => false,
                     } {
                         return true;
