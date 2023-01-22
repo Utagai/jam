@@ -72,8 +72,19 @@ impl Jam {
                 let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
                 println!("Looking at target: {}", target.name);
 
+                // Target name validations:
                 if target.name.len() == 0 {
                     bail!("cannot have an empty target name")
+                } else if target.name.contains(".") {
+                    // TODO: This and its sibling, '?', should have
+                    // its checks changed to be more permissive --
+                    // they're only not allowed _after_ a delimiter,
+                    // as that's when they cause ambiguity. Anywhere
+                    // else is actually fine. e.g. foo.bar-baz is
+                    // actually fine!
+                    bail!("cannot have a '.' in a target name: '{}'", target.name)
+                } else if target.name.contains("?") {
+                    bail!("cannot have a '?' in a target name: '{}'", target.name)
                 }
 
                 let node_idx = exec_dag.add_node(Target::from(target));
@@ -506,9 +517,29 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn empty_target_name() {
-                check_jam_err(vec![target::lone("")], "cannot have an empty target name");
+            mod target_name_validation {
+                use super::*;
+
+                #[test]
+                fn empty_target_name() {
+                    check_jam_err(vec![target::lone("")], "cannot have an empty target name");
+                }
+
+                #[test]
+                fn target_name_with_period() {
+                    check_jam_err(
+                        vec![target::lone("pow.")],
+                        "cannot have a '.' in a target name: 'pow.'",
+                    );
+                }
+
+                #[test]
+                fn target_name_with_question() {
+                    check_jam_err(
+                        vec![target::lone("pow?")],
+                        "cannot have a '?' in a target name: 'pow?'",
+                    );
+                }
             }
         }
     }
