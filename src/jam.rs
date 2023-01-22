@@ -58,6 +58,11 @@ impl Jam {
             for _ in 0..queue_len {
                 let target: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
                 println!("Looking at target: {}", target.name);
+
+                if target.name.len() == 0 {
+                    bail!("cannot have an empty target name")
+                }
+
                 let node_idx = exec_dag.add_node(Target::from(target));
                 if iterating_roots {
                     roots.push(node_idx.clone());
@@ -429,6 +434,11 @@ mod tests {
                         "duplicate target name: 'foo'",
                     );
                 }
+            }
+
+            #[test]
+            fn empty_target_name() {
+                check_jam_err(vec![target::lone("")], "cannot have an empty target name");
             }
         }
     }
