@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex, Walker};
 
 use crate::config::{Config, TargetCfg};
@@ -41,11 +41,6 @@ pub struct Jam {
 }
 
 impl Jam {
-    // TODO: This function should be doing validation.
-    // e.g.
-    // 1. checking for cycles
-    // 2. duplicate target names
-    // 3. etc
     pub fn parse(cfg: Config) -> Result<Jam> {
         let mut exec_dag: Dag<Target, u32> = Dag::new();
         // TODO: I wonder if we can use NodeIndex<String> and just use
@@ -82,7 +77,9 @@ impl Jam {
                         deps.push((target.name.clone(), dep.clone()));
                     }
                 }
-                println!("insert node into map: {}", target.name);
+                if node_idxes.contains_key(&target.name) {
+                    bail!("duplicate target name: '{}'", target.name)
+                }
                 node_idxes.insert(target.name.clone(), node_idx);
             }
             iterating_roots = false; // TODO: Cleaner way to write this?
@@ -91,20 +88,26 @@ impl Jam {
         // With their dependencies recorded, now add edges to the DAG to represent them:
         for dep in deps {
             println!("handling dep: {:?}", dep);
+            let dependee_idx = node_idxes
+                .get(&dep.0)
+                .ok_or(Jam::nonexistent_dep_err(dep.0))?;
+            let dependent_idx = node_idxes
+                .get(&dep.1)
+                .ok_or(Jam::nonexistent_dep_err(dep.1))?;
             // TODO: So we are relying on default `?` behavior to
             // propagate a cycle detection error here, but we likely
             // want to catch this and return a better error.  I
             // believe anyhow may have a way of annotating this error
             // or maybe even replacing it...  Or perhaps we do need to
             // get thiserror.
-            exec_dag.add_edge(
-                *node_idxes.get(&dep.0).unwrap(),
-                *node_idxes.get(&dep.1).unwrap(),
-                0,
-            )?;
+            exec_dag.add_edge(*dependee_idx, *dependent_idx, 0)?;
         }
 
         Ok(Jam { roots, exec_dag })
+    }
+
+    fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
+        anyhow!("reference to nonexistent dep: {}", dep_name)
     }
 }
 
@@ -210,13 +213,13 @@ mod tests {
             Jam::parse(cfg).expect("expected no errors from parsing")
         }
 
-        fn get_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
+        fn check_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
             let cfg = Config {
                 options: Options {},
                 targets,
             };
             if let Err(err) = Jam::parse(cfg) {
-                assert!(format!("{:?}", err).contains(expected_err))
+                assert_eq!(format!("{:?}", err).trim(), expected_err)
             } else {
                 panic!("expected an error from parsing, but got none")
             }
@@ -359,16 +362,77 @@ mod tests {
         mod errors {
             use super::*;
 
-            // TODO: A case for when a dep DNE.
-
             #[test]
-            fn cycle() {
-                get_jam_err(
+            fn immediate_cycle() {
+                check_jam_err(
                     vec![
                         target::dep("baz", vec!["foo"]),
                         target::dep("foo", vec!["baz"]),
                     ],
                     "WouldCycle",
+                );
+            }
+
+            #[test]
+            fn long_cycle() {
+                check_jam_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["bar"]),
+                        target::dep("bar", vec!["quux"]),
+                        target::dep("quux", vec!["baz"]),
+                    ],
+                    "WouldCycle",
+                );
+            }
+
+            #[test]
+            fn dep_that_dne() {
+                check_jam_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["I DO NOT EXIST"]),
+                    ],
+                    "reference to nonexistent dep: I DO NOT EXIST",
+                );
+            }
+
+            mod dupes {}
+            #[test]
+            fn target_names_same_level() {
+                check_jam_err(
+                    vec![target::lone("foo"), target::lone("foo")],
+                    "duplicate target name: 'foo'",
+                );
+            }
+
+            #[test]
+            fn target_names_diff_level() {
+                check_jam_err(
+                    vec![
+                        target::sub("foo", vec![target::lone("bar")]),
+                        target::lone("bar"),
+                    ],
+                    "duplicate target name: 'bar'",
+                );
+            }
+
+            #[test]
+            fn target_names_child_parent() {
+                check_jam_err(
+                    vec![target::sub("foo", vec![target::lone("foo")])],
+                    "duplicate target name: 'foo'",
+                );
+            }
+
+            #[test]
+            fn target_names_grand_child_parent() {
+                check_jam_err(
+                    vec![target::sub(
+                        "foo",
+                        vec![target::sub("bar", vec![target::lone("foo")])],
+                    )],
+                    "duplicate target name: 'foo'",
                 );
             }
         }
