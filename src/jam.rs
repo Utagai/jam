@@ -187,6 +187,17 @@ mod tests {
                     deps: Some(deps.iter().map(|dep| String::from(*dep)).collect()),
                 }
             }
+
+            pub fn sub(name: &str, subs: Vec<TargetCfg>) -> TargetCfg {
+                TargetCfg {
+                    name: String::from(name),
+                    shortname: None,
+                    help: None,
+                    cmd: None,
+                    targets: Some(subs),
+                    deps: None,
+                }
+            }
         }
 
         fn get_jam(targets: Vec<TargetCfg>) -> Jam {
@@ -201,17 +212,23 @@ mod tests {
         // Jam instance here ourselves based on targets + deps, but it
         // would require more complex logic to derive a DAG from the
         // two arguments and could be error prone... maybe later.
-        fn verify_jam_dag(jam: Jam, targets: Vec<&str>, deps: Vec<(&str, &str)>) {
-            for target in &targets {
+        fn verify_jam_dag(jam: Jam, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
+            for target in targets {
                 assert!(jam.has_target(target));
             }
 
-            for dep in &deps {
+            for dep in deps {
                 assert!(jam.has_dep(dep.0, dep.1));
             }
 
             assert_eq!(jam.exec_dag.node_count(), targets.len());
             assert_eq!(jam.exec_dag.edge_count(), deps.len());
+        }
+
+        fn verify_jam_dags(jams: Vec<Jam>, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
+            for jam in jams {
+                verify_jam_dag(jam, targets, deps);
+            }
         }
 
         mod nodeps {
@@ -221,13 +238,13 @@ mod tests {
             fn single_target() {
                 let expected_target_name = "foo";
                 let jam = get_jam(vec![target::lone(expected_target_name)]);
-                verify_jam_dag(jam, vec![expected_target_name], vec![]);
+                verify_jam_dag(jam, &vec![expected_target_name], &vec![]);
             }
 
             #[test]
             fn zero_targets() {
                 let jam = get_jam(vec![]);
-                verify_jam_dag(jam, vec![], vec![]);
+                verify_jam_dag(jam, &vec![], &vec![]);
             }
 
             #[test]
@@ -242,7 +259,7 @@ mod tests {
                 expected_target_names
                     .iter()
                     .for_each(|name| assert!(jam.has_target(&name)));
-                verify_jam_dag(jam, expected_target_names, vec![]);
+                verify_jam_dag(jam, &expected_target_names, &vec![]);
             }
         }
 
@@ -251,49 +268,77 @@ mod tests {
 
             #[test]
             fn single_dependency() {
-                let jam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
-                verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+                let depjam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
+                let subjam = get_jam(vec![target::sub("foo", vec![target::lone("bar")])]);
+                verify_jam_dags(
+                    vec![depjam, subjam],
+                    &vec!["foo", "bar"],
+                    &vec![("foo", "bar")],
+                );
             }
 
             #[test]
             fn one_target_two_dependents() {
-                let jam = get_jam(vec![
+                let depjam = get_jam(vec![
                     target::lone("bar"),
                     target::lone("baz"),
                     target::dep("foo", vec!["bar", "baz"]),
                 ]);
-                verify_jam_dag(
-                    jam,
-                    vec!["foo", "bar", "baz"],
-                    vec![("foo", "bar"), ("foo", "baz")],
+
+                let subjam = get_jam(vec![target::sub(
+                    "foo",
+                    vec![target::lone("bar"), target::lone("baz")],
+                )]);
+                verify_jam_dags(
+                    vec![depjam, subjam],
+                    &vec!["foo", "bar", "baz"],
+                    &vec![("foo", "bar"), ("foo", "baz")],
                 );
             }
 
             #[test]
             fn single_dependency_but_dependee_defined_first() {
                 let jam = get_jam(vec![target::dep("foo", vec!["bar"]), target::lone("bar")]);
-                verify_jam_dag(jam, vec!["foo", "bar"], vec![("foo", "bar")]);
+                verify_jam_dag(jam, &vec!["foo", "bar"], &vec![("foo", "bar")]);
             }
 
             #[test]
             fn two_targets_one_dep_each() {
-                let jam = get_jam(vec![
+                let depjam = get_jam(vec![
                     target::lone("c"),
                     target::lone("d"),
                     target::dep("a", vec!["c"]),
                     target::dep("b", vec!["d"]),
                 ]);
-                verify_jam_dag(jam, vec!["a", "b", "c", "d"], vec![("a", "c"), ("b", "d")]);
+
+                let subjam = get_jam(vec![
+                    target::sub("a", vec![target::lone("c")]),
+                    target::sub("b", vec![target::lone("d")]),
+                ]);
+                verify_jam_dags(
+                    vec![depjam, subjam],
+                    &vec!["a", "b", "c", "d"],
+                    &vec![("a", "c"), ("b", "d")],
+                );
             }
 
             #[test]
             fn two_targets_share_a_dep() {
-                let jam = get_jam(vec![
+                let depjam = get_jam(vec![
                     target::lone("c"),
                     target::dep("a", vec!["c"]),
                     target::dep("b", vec!["c"]),
                 ]);
-                verify_jam_dag(jam, vec!["a", "b", "c"], vec![("a", "c"), ("b", "c")]);
+
+                let subjam = get_jam(vec![
+                    target::sub("a", vec![target::lone("c")]),
+                    target::dep("b", vec!["c"]),
+                ]);
+                verify_jam_dags(
+                    vec![depjam, subjam],
+                    &vec!["a", "b", "c"],
+                    &vec![("a", "c"), ("b", "c")],
+                );
             }
         }
     }
