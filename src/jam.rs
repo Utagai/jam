@@ -189,65 +189,68 @@ mod tests {
             }
         }
 
+        fn get_jam(targets: Vec<TargetCfg>) -> Jam {
+            let cfg = Config {
+                options: Options {},
+                targets,
+            };
+            Jam::parse(cfg).expect("expected no errors from parsing")
+        }
+
+        fn verify_jam_dag(jam: Jam, targets: Vec<&str>, deps: Vec<(&str, &str)>) {
+            for target in &targets {
+                assert!(jam.has_target(target));
+            }
+
+            for dep in &deps {
+                assert!(jam.has_dep(dep.0, dep.1));
+            }
+
+            assert_eq!(jam.exec_dag.node_count(), targets.len());
+            assert_eq!(jam.exec_dag.edge_count(), deps.len());
+        }
+
         #[test]
         fn single_target() {
             let expected_target_name = "foo";
-            let cfg = Config {
-                options: Options {},
-                targets: vec![target::lone(expected_target_name)],
-            };
-            let jam = Jam::parse(cfg).expect("expected no errors from parsing");
-            assert!(jam.has_target(expected_target_name));
-            assert_eq!(jam.exec_dag.node_count(), 1);
-            assert_eq!(jam.exec_dag.edge_count(), 0);
+            let jam = get_jam(vec![target::lone(expected_target_name)]);
+            verify_jam_dag(jam, vec![expected_target_name], vec![]);
         }
 
         #[test]
         fn zero_targets() {
-            let cfg = Config {
-                options: Options {},
-                targets: vec![],
-            };
-            let jam = Jam::parse(cfg).expect("expected no errors from parsing");
-            assert_eq!(jam.exec_dag.node_count(), 0);
-            assert_eq!(jam.exec_dag.edge_count(), 0);
+            let jam = get_jam(vec![]);
+            verify_jam_dag(jam, vec![], vec![]);
         }
 
         #[test]
         fn multiple_targets() {
             let expected_target_names = vec!["foo", "bar", "baz"];
-            let cfg = Config {
-                options: Options {},
-                targets: expected_target_names
+            let jam = get_jam(
+                expected_target_names
                     .iter()
                     .map(|name| target::lone(name))
                     .collect(),
-            };
-            let jam = Jam::parse(cfg).expect("expected no errors from parsing");
+            );
             expected_target_names
                 .iter()
                 .for_each(|name| assert!(jam.has_target(&name)));
-            assert_eq!(jam.exec_dag.node_count(), 3);
-            assert_eq!(jam.exec_dag.edge_count(), 0);
+            verify_jam_dag(jam, expected_target_names, vec![]);
         }
 
         #[test]
         fn single_dependency() {
             let dependee_name = "foo";
             let dependent_name = "bar";
-            let cfg = Config {
-                options: Options {},
-                targets: vec![
-                    target::lone(dependent_name),
-                    target::dep(dependee_name, vec!["bar"]),
-                ],
-            };
-            let jam = Jam::parse(cfg).expect("expected no errors from parsing");
-            assert!(jam.has_target(dependee_name));
-            assert!(jam.has_target(dependent_name));
-            assert_eq!(jam.exec_dag.node_count(), 2);
-            assert_eq!(jam.exec_dag.edge_count(), 1);
-            assert!(jam.has_dep(dependee_name, dependent_name));
+            let jam = get_jam(vec![
+                target::lone(dependent_name),
+                target::dep(dependee_name, vec!["bar"]),
+            ]);
+            verify_jam_dag(
+                jam,
+                vec![dependee_name, dependent_name],
+                vec![(dependee_name, dependent_name)],
+            );
         }
     }
 }
