@@ -7,7 +7,6 @@ use radix_trie::{Trie, TrieKey};
 
 use crate::config::{Config, TargetCfg};
 
-// TODO: Exercise - can we use &str in any of these fields?
 struct Target<'a> {
     name: &'a str,
     chord: Chord,
@@ -34,8 +33,6 @@ impl<'a> From<&'a TargetCfg> for Target<'a> {
 type NIdx = u32;
 
 pub struct Jam<'a> {
-    // TODO: We should be able to bind the type parameter of NodeIndex
-    // to the corresponding type parameter in Dag.
     root_targets: Vec<NodeIndex<NIdx>>,
     dag: Dag<Target<'a>, NIdx>,
     chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
@@ -98,9 +95,9 @@ impl TrieKey for Chord {
 impl<'a> Jam<'a> {
     pub fn parse(cfg: &'a Config) -> Result<Jam<'a>> {
         let mut dag: Dag<Target, NIdx> = Dag::new();
+        let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
-        let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
@@ -108,6 +105,7 @@ impl<'a> Jam<'a> {
         // we currently have for finding a Target given a target_name.
         let mut trie: Trie<Chord, Vec<NodeIndex<NIdx>>> = Trie::new();
 
+        // Seed the queue with the root target cfgs:
         target_queue.extend(cfg.targets.iter());
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
@@ -158,6 +156,21 @@ impl<'a> Jam<'a> {
                 }
 
                 let node_idx = dag.add_node(target);
+                // A natural question to ask here is about conflicts
+                // of chords. For example, if two targets both have
+                // the chord `t-a`, how can we disambiguate them? The
+                // approach we take here is actually laziness. The
+                // trie actually maps `t-a` to _two_ different targets
+                // in this case, and the idea is that at 'runtime',
+                // when the user has keyed in `t-a`, we will detect a
+                // vector of length > 1, and _at that time_ we will
+                // find their common prefix and use the remaining
+                // characters (or '.') to disambiguate. This is
+                // actually going to be more efficient, because doing
+                // the reconciliation here pays the cost on _every_
+                // jam startup, but the lazy approach only does it if
+                // the user is going to use an ambiguous chord, which
+                // may only be for very rare targets!
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
                 // This will only fill up to the amount of the _first_
                 // value of queue_len, which is going to be the number
@@ -171,7 +184,12 @@ impl<'a> Jam<'a> {
             }
         }
 
-        // With their dependencies recorded, now add edges to the DAG to represent them:
+        // With their dependencies recorded, now add edges to the DAG
+        // to represent them.
+        // While doing this, we will catch cases where the dep isn't
+        // recorded in our node index map, which means it doesn't
+        // exist, as well as cases where adding the dep to the DAG
+        // triggers a cycle.
         for dep in deps {
             let dependee_idx = node_idxes
                 .get(dep.0)
