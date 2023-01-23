@@ -121,6 +121,10 @@ impl<'a> Jam<'a> {
                 let target = Target::from(target_cfg);
                 let target_chord = target.chord.clone();
 
+                // Walk the dependencies.
+
+                // This is for recording the deps for edge
+                // construction later...
                 if let Some(targets) = &target_cfg.targets {
                     for subtarget in targets.into_iter() {
                         deps.push((target.name, &subtarget.name));
@@ -128,13 +132,21 @@ impl<'a> Jam<'a> {
                     }
                 }
 
+                // ...but also to add subtargets to
+                // the queue so we can exhaustively visit all the
+                // targets in the config. Subtargets are also added as
+                // deps too, since they implicitly represent
+                // dependencies.
                 if let Some(target_deps) = &target_cfg.deps {
                     for dep in target_deps {
                         deps.push((target.name, dep));
                     }
                 }
 
+                // Add this target as a node to the DAG.
                 let node_idx = dag.add_node(target);
+
+                // And add it to the trie under its chord.
                 // A natural question to ask here is about conflicts
                 // of chords. For example, if two targets both have
                 // the chord `t-a`, how can we disambiguate them? The
@@ -151,6 +163,8 @@ impl<'a> Jam<'a> {
                 // the user is going to use an ambiguous chord, which
                 // may only be for very rare targets!
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
+
+                // Record the root node indexes.
                 // This will only fill up to the amount of the _first_
                 // value of queue_len, which is going to be the number
                 // of nodes at the top level of the BFS -- this is
@@ -159,6 +173,9 @@ impl<'a> Jam<'a> {
                 if root_targets.len() < queue_len {
                     root_targets.push(node_idx);
                 }
+
+                // And at last, record the mapping of target name to
+                // its node index.
                 node_idxes.insert(&target_cfg.name, node_idx);
             }
         }
@@ -191,7 +208,6 @@ impl<'a> Jam<'a> {
         cfg: &TargetCfg,
         node_idxes: &HashMap<&str, NodeIndex<NIdx>>,
     ) -> Result<()> {
-        // Target validations:
         // TODO: This should be validating short names too.
         if cfg.name.len() == 0 {
             bail!("cannot have an empty target name")
