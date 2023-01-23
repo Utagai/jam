@@ -116,28 +116,7 @@ impl<'a> Jam<'a> {
                 let target_cfg: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
                 println!("Looking at target: {}", target_cfg.name);
 
-                // Target validations:
-                // TODO: This should be validating short names too.
-                if target_cfg.name.len() == 0 {
-                    bail!("cannot have an empty target name")
-                } else if target_cfg.name.contains(".") {
-                    // TODO: This and its sibling, '?', should have
-                    // its checks changed to be more permissive --
-                    // they're only not allowed _after_ a delimiter,
-                    // as that's when they cause ambiguity. Anywhere
-                    // else is actually fine. e.g. foo.bar-baz is
-                    // actually fine!
-                    bail!("cannot have a '.' in a target name: '{}'", target_cfg.name)
-                } else if target_cfg.name.contains("?") {
-                    bail!("cannot have a '?' in a target name: '{}'", target_cfg.name)
-                } else if node_idxes.contains_key(&target_cfg.name as &str) {
-                    bail!("duplicate target name: '{}'", target_cfg.name)
-                } else if target_cfg.deps.is_none()
-                    && target_cfg.targets.is_none()
-                    && target_cfg.cmd.is_none()
-                {
-                    bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", target_cfg.name)
-                }
+                Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
                 let target = Target::from(target_cfg);
                 let target_chord = target.chord.clone();
@@ -206,6 +185,33 @@ impl<'a> Jam<'a> {
             dag,
             chords: trie,
         })
+    }
+
+    fn validate_target_cfg(
+        cfg: &TargetCfg,
+        node_idxes: &HashMap<&str, NodeIndex<NIdx>>,
+    ) -> Result<()> {
+        // Target validations:
+        // TODO: This should be validating short names too.
+        if cfg.name.len() == 0 {
+            bail!("cannot have an empty target name")
+        } else if cfg.name.contains(".") {
+            // TODO: This and its sibling, '?', should have
+            // its checks changed to be more permissive --
+            // they're only not allowed _after_ a delimiter,
+            // as that's when they cause ambiguity. Anywhere
+            // else is actually fine. e.g. foo.bar-baz is
+            // actually fine!
+            bail!("cannot have a '.' in a target name: '{}'", cfg.name)
+        } else if cfg.name.contains("?") {
+            bail!("cannot have a '?' in a target name: '{}'", cfg.name)
+        } else if node_idxes.contains_key(&cfg.name as &str) {
+            bail!("duplicate target name: '{}'", cfg.name)
+        } else if cfg.deps.is_none() && cfg.targets.is_none() && cfg.cmd.is_none() {
+            bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
+        }
+
+        Ok(())
     }
 
     fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
