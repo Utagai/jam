@@ -97,10 +97,10 @@ impl TrieKey for Chord {
 
 impl<'a> Jam<'a> {
     pub fn parse(cfg: &'a Config) -> Result<Jam<'a>> {
-        let mut exec_dag: Dag<Target, NIdx> = Dag::new();
-        let mut node_idxes: HashMap<String, NodeIndex<NIdx>> = HashMap::new();
+        let mut dag: Dag<Target, NIdx> = Dag::new();
+        let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
         let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
-        let mut deps: Vec<(String, String)> = Vec::new();
+        let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
@@ -132,7 +132,7 @@ impl<'a> Jam<'a> {
                     bail!("cannot have a '.' in a target name: '{}'", target_cfg.name)
                 } else if target_cfg.name.contains("?") {
                     bail!("cannot have a '?' in a target name: '{}'", target_cfg.name)
-                } else if node_idxes.contains_key(&target_cfg.name) {
+                } else if node_idxes.contains_key(&target_cfg.name as &str) {
                     bail!("duplicate target name: '{}'", target_cfg.name)
                 } else if target_cfg.deps.is_none()
                     && target_cfg.targets.is_none()
@@ -143,10 +143,21 @@ impl<'a> Jam<'a> {
 
                 let target = Target::from(target_cfg);
                 let target_chord = target.chord.clone();
-                // TODO: I don't think we need to do this.
-                let target_name = String::from(target.name);
 
-                let node_idx = exec_dag.add_node(target);
+                if let Some(targets) = &target_cfg.targets {
+                    for subtarget in targets.into_iter() {
+                        deps.push((target.name, &subtarget.name));
+                        target_queue.push_back(subtarget);
+                    }
+                }
+
+                if let Some(target_deps) = &target_cfg.deps {
+                    for dep in target_deps {
+                        deps.push((target.name, dep));
+                    }
+                }
+
+                let node_idx = dag.add_node(target);
                 trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
                 // This will only fill up to the amount of the _first_
                 // value of queue_len, which is going to be the number
@@ -154,40 +165,27 @@ impl<'a> Jam<'a> {
                 // precisely the set of root nodes, aka, the top-level
                 // targets.
                 if root_targets.len() < queue_len {
-                    root_targets.push(node_idx.clone());
+                    root_targets.push(node_idx);
                 }
-                if let Some(targets) = &target_cfg.targets {
-                    for subtarget in targets.into_iter() {
-                        deps.push((target_name.clone(), subtarget.name.clone()));
-                        target_queue.push_back(subtarget);
-                    }
-                }
-
-                if let Some(target_deps) = &target_cfg.deps {
-                    for dep in target_deps {
-                        deps.push((target_name.clone(), dep.clone()));
-                    }
-                }
-                node_idxes.insert(target_name.clone(), node_idx);
+                node_idxes.insert(&target_cfg.name, node_idx);
             }
         }
 
         // With their dependencies recorded, now add edges to the DAG to represent them:
         for dep in deps {
             let dependee_idx = node_idxes
-                .get(&dep.0)
-                .ok_or(Jam::nonexistent_dep_err(dep.0.clone()))?;
+                .get(dep.0)
+                .ok_or(Jam::nonexistent_dep_err(dep.0))?;
             let dependent_idx = node_idxes
-                .get(&dep.1)
-                .ok_or(Jam::nonexistent_dep_err(dep.1.clone()))?;
-            exec_dag
-                .add_edge(*dependee_idx, *dependent_idx, 0)
+                .get(dep.1)
+                .ok_or(Jam::nonexistent_dep_err(dep.1))?;
+            dag.add_edge(*dependee_idx, *dependent_idx, 0)
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
         }
 
         Ok(Jam {
             root_targets,
-            dag: exec_dag,
+            dag,
             chords: trie,
         })
     }
@@ -206,7 +204,7 @@ mod tests {
 
         use crate::config::Options;
 
-        impl Jam {
+        impl<'a> Jam<'a> {
             fn node_has_target(
                 &self,
                 nidx: &NodeIndex<NIdx>,
@@ -296,11 +294,16 @@ mod tests {
             }
         }
 
-        fn get_jam(targets: Vec<TargetCfg>) -> Jam {
-            let cfg = Config {
-                options: Options {},
-                targets,
-            };
+        impl Config {
+            fn with_targets(targets: Vec<TargetCfg>) -> Config {
+                Config {
+                    options: Options {},
+                    targets,
+                }
+            }
+        }
+
+        fn get_jam<'a>(cfg: &'a Config) -> Jam<'a> {
             Jam::parse(cfg).expect("expected no errors from parsing")
         }
 
@@ -309,7 +312,7 @@ mod tests {
                 options: Options {},
                 targets,
             };
-            if let Err(err) = Jam::parse(cfg) {
+            if let Err(err) = Jam::parse(&cfg) {
                 assert_eq!(format!("{:?}", err).trim(), expected_err)
             } else {
                 panic!("expected an error from parsing, but got none")
@@ -345,25 +348,28 @@ mod tests {
             #[test]
             fn single_target() {
                 let expected_target_name = "foo";
-                let jam = get_jam(vec![target::lone(expected_target_name)]);
+                let cfg = Config::with_targets(vec![target::lone(expected_target_name)]);
+                let jam = get_jam(&cfg);
                 verify_jam_dag(jam, &vec![expected_target_name], &vec![]);
             }
 
             #[test]
             fn zero_targets() {
-                let jam = get_jam(vec![]);
+                let cfg = Config::with_targets(vec![]);
+                let jam = get_jam(&cfg);
                 verify_jam_dag(jam, &vec![], &vec![]);
             }
 
             #[test]
             fn multiple_targets() {
                 let expected_target_names = vec!["foo", "bar", "quux"];
-                let jam = get_jam(
+                let cfg = Config::with_targets(
                     expected_target_names
                         .iter()
                         .map(|name| target::lone(name))
                         .collect(),
                 );
+                let jam = get_jam(&cfg);
                 expected_target_names
                     .iter()
                     .for_each(|name| assert!(jam.has_target(&name)));
@@ -376,8 +382,14 @@ mod tests {
 
             #[test]
             fn single_dependency() {
-                let depjam = get_jam(vec![target::lone("bar"), target::dep("foo", vec!["bar"])]);
-                let subjam = get_jam(vec![target::sub("foo", vec![target::lone("bar")])]);
+                let depcfg = Config::with_targets(vec![
+                    target::lone("bar"),
+                    target::dep("foo", vec!["bar"]),
+                ]);
+                let depjam = get_jam(&depcfg);
+                let subcfg =
+                    Config::with_targets(vec![target::sub("foo", vec![target::lone("bar")])]);
+                let subjam = get_jam(&subcfg);
                 verify_jam_dags(
                     vec![depjam, subjam],
                     &vec!["foo", "bar"],
@@ -387,16 +399,18 @@ mod tests {
 
             #[test]
             fn one_target_two_dependents() {
-                let depjam = get_jam(vec![
+                let depcfg = Config::with_targets(vec![
                     target::lone("bar"),
                     target::lone("quux"),
                     target::dep("foo", vec!["bar", "quux"]),
                 ]);
+                let depjam = get_jam(&depcfg);
 
-                let subjam = get_jam(vec![target::sub(
+                let subcfg = Config::with_targets(vec![target::sub(
                     "foo",
                     vec![target::lone("bar"), target::lone("quux")],
                 )]);
+                let subjam = get_jam(&subcfg);
                 verify_jam_dags(
                     vec![depjam, subjam],
                     &vec!["foo", "bar", "quux"],
@@ -406,23 +420,29 @@ mod tests {
 
             #[test]
             fn single_dependency_but_dependee_defined_first() {
-                let jam = get_jam(vec![target::dep("foo", vec!["bar"]), target::lone("bar")]);
+                let cfg = Config::with_targets(vec![
+                    target::dep("foo", vec!["bar"]),
+                    target::lone("bar"),
+                ]);
+                let jam = get_jam(&cfg);
                 verify_jam_dag(jam, &vec!["foo", "bar"], &vec![("foo", "bar")]);
             }
 
             #[test]
             fn two_targets_one_dep_each() {
-                let depjam = get_jam(vec![
+                let depcfg = Config::with_targets(vec![
                     target::lone("c"),
                     target::lone("d"),
                     target::dep("a", vec!["c"]),
                     target::dep("b", vec!["d"]),
                 ]);
+                let depjam = get_jam(&depcfg);
 
-                let subjam = get_jam(vec![
+                let subcfg = Config::with_targets(vec![
                     target::sub("a", vec![target::lone("c")]),
                     target::sub("b", vec![target::lone("d")]),
                 ]);
+                let subjam = get_jam(&subcfg);
                 verify_jam_dags(
                     vec![depjam, subjam],
                     &vec!["a", "b", "c", "d"],
@@ -432,16 +452,18 @@ mod tests {
 
             #[test]
             fn two_targets_share_a_dep() {
-                let depjam = get_jam(vec![
+                let depcfg = Config::with_targets(vec![
                     target::lone("c"),
                     target::dep("a", vec!["c"]),
                     target::dep("b", vec!["c"]),
                 ]);
+                let depjam = get_jam(&depcfg);
 
-                let subjam = get_jam(vec![
+                let subcfg = Config::with_targets(vec![
                     target::sub("a", vec![target::lone("c")]),
                     target::dep("b", vec!["c"]),
                 ]);
+                let subjam = get_jam(&subcfg);
                 verify_jam_dags(
                     vec![depjam, subjam],
                     &vec!["a", "b", "c"],
@@ -461,7 +483,8 @@ mod tests {
 
             #[test]
             fn automatic_of_single_word_is_first_char() {
-                let jam = get_jam(vec![target::lone("foo")]);
+                let cfg = Config::with_targets(vec![target::lone("foo")]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["f"]))
                         .expect("expected to find the target by its expected chord")
@@ -472,7 +495,8 @@ mod tests {
 
             #[test]
             fn automatic_of_double_word_is_first_char() {
-                let jam = get_jam(vec![target::lone("foo-bar")]);
+                let cfg = Config::with_targets(vec![target::lone("foo-bar")]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["f", "b"]))
                         .expect("expected to find the target by its expected chord")
@@ -483,7 +507,8 @@ mod tests {
 
             #[test]
             fn automatic_of_multi_word_is_first_char() {
-                let jam = get_jam(vec![target::lone("foo-bar-baz-quux")]);
+                let cfg = Config::with_targets(vec![target::lone("foo-bar-baz-quux")]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["f", "b", "b", "q"]))
                         .expect("expected to find the target by its expected chord")
@@ -494,11 +519,12 @@ mod tests {
 
             #[test]
             fn automatic_of_multiple_non_conflicting_targets() {
-                let jam = get_jam(vec![
+                let cfg = Config::with_targets(vec![
                     target::lone("foo"),
                     target::lone("bar"),
                     target::lone("quux"),
                 ]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["f"]))
                         .expect("expected to find the target by its expected chord")
@@ -521,12 +547,13 @@ mod tests {
 
             #[test]
             fn automatic_of_multiple_conflicting_targets_no_reconciliation() {
-                let jam = get_jam(vec![
+                let cfg = Config::with_targets(vec![
                     target::lone("bar"),
                     target::lone("baz"),
                     target::lone("bam"),
                     target::lone("barr"),
                 ]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["b"]))
                         .expect("expected to find the target by its expected chord")
@@ -537,7 +564,7 @@ mod tests {
 
             #[test]
             fn override_respected() {
-                let jam = get_jam(vec![TargetCfg {
+                let cfg = Config::with_targets(vec![TargetCfg {
                     name: String::from("foo"),
                     chord_str: Some(String::from("x")),
                     help: None,
@@ -545,6 +572,7 @@ mod tests {
                     targets: None,
                     deps: None,
                 }]);
+                let jam = get_jam(&cfg);
                 assert_eq!(
                     jam.get_targets_by_chord(Chord::new(vec!["x"]))
                         .expect("expected to find the target by its expected chord")
