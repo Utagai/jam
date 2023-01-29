@@ -24,7 +24,7 @@ use serde::Deserialize;
 #[derive(Debug, PartialEq)]
 pub struct DesugaredTargetCfg {
     pub name: String,
-    pub chord_str: String, // TODO: Maybe Vec<String> or maybe even Chord?
+    pub chord_str: String,
     pub help: String,
     pub cmd: Option<String>,
     pub deps: Vec<String>,
@@ -34,17 +34,9 @@ pub struct DesugaredTargetCfg {
 #[derive(Debug, Deserialize)]
 pub struct TargetCfg {
     pub name: String,
-    // TODO: I believe, if we define custom serialization for this
-    // field, we can make this non-Optional as long as we know
-    // name. There may be conflicts, but those can be reconciled at a
-    // time after serialization.  Plus, the reconciliation logic
-    // likely gets simpler if it can work with String rather than
-    // Option<String>.
     #[serde(rename = "chord")]
     pub chord_str: Option<String>,
     pub help: Option<String>,
-    // TODO: Should this still be optional even if we have linear task
-    // definitions?
     pub cmd: Option<String>,
     pub targets: Option<Vec<TargetCfg>>,
     pub deps: Option<Vec<String>>,
@@ -53,7 +45,10 @@ pub struct TargetCfg {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Options {}
 
-// TODO: Is 'desugaring' the word we are actually looking for?
+// NOTE: 'Desugaring' may not exactly be the right terminology here.
+// But the overall idea is we are rewriting the config in a simpler
+// but perhaps more verbose and/or less readable form. This form is
+// better for machines, but the prior form is better for humans.
 #[derive(Debug, PartialEq)]
 pub struct DesugaredConfig {
     pub options: Options,
@@ -69,7 +64,7 @@ pub struct Config {
 
 impl Config {
     // TODO: Do we even need Result? I don't think we ever fail?
-    pub fn desugar(self) -> Result<DesugaredConfig> {
+    pub fn desugar<'a>(self) -> Result<DesugaredConfig> {
         Ok(DesugaredConfig {
             options: Options {},
             targets: self
@@ -83,15 +78,18 @@ impl Config {
         })
     }
 
-    fn desugar_target(sugar: TargetCfg, prefix: String) -> Result<Vec<DesugaredTargetCfg>> {
-        let realized_name = if prefix.len() > 0 {
-            format!("{}-{}", prefix, sugar.name)
+    fn desugar_target<'a, T: AsRef<str>>(
+        sugar: TargetCfg,
+        prefix: T,
+    ) -> Result<Vec<DesugaredTargetCfg>> {
+        let realized_name = if prefix.as_ref().len() > 0 {
+            format!("{}-{}", prefix.as_ref(), sugar.name)
         } else {
-            sugar.name.clone() // TODO: clone
+            sugar.name
         };
         let chord_str = Self::name_to_short(&realized_name);
         let desugared = DesugaredTargetCfg {
-            name: realized_name,
+            name: realized_name.clone(),
             chord_str: sugar.chord_str.unwrap_or(chord_str),
             help: sugar.help.unwrap_or("no help provided".to_string()),
             cmd: sugar.cmd,
@@ -103,15 +101,7 @@ impl Config {
         let mut desugared_targets = vec![desugared];
         if let Some(targets) = sugar.targets {
             for target in targets {
-                let desugared_subtargets = Config::desugar_target(
-                    target,
-                    format!(
-                        "{}{}{}",
-                        prefix,
-                        if prefix.is_empty() { "" } else { "-" },
-                        sugar.name
-                    ),
-                )?;
+                let desugared_subtargets = Config::desugar_target(target, &realized_name)?;
                 // Note that the first element is always the root
                 // element of the recursion, so the first element of
                 // desugared_subtargets is going to be the desugared
@@ -119,8 +109,7 @@ impl Config {
                 // as well.
                 desugared_targets[0]
                     .deps
-                    .push(desugared_subtargets[0].name.clone()); // TODO: clone
-                                                                 // Extend the desugared targets.
+                    .push(desugared_subtargets[0].name.to_string());
                 desugared_targets.extend(desugared_subtargets);
             }
         }
