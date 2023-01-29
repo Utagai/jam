@@ -7,12 +7,12 @@ use serde::Deserialize;
 /// desugaring some of the things implicitly encoded in it makes our
 /// job significantly easier.
 /// In particular, desugaring leads to doing the following things:
-///		- Autogenerating chords if not specified. This does not care
-///		 about conflicts.
-///		- Changing names of subtargets to be prefixed by their parent's
-///		 names. This is done recursively (e.g. the parent itself may be
-///		 prefixed).
-///		- Subtarget sections are flattened (post-prefixing) into deps.
+/// * Autogenerating chords if not specified. This does not care
+///  about conflicts.
+/// * Changing names of subtargets to be prefixed by their parent's
+///  names. This is done recursively (e.g. the parent itself may be
+///  prefixed).
+/// * Subtarget sections are flattened (post-prefixing) into deps.
 /// TODO: The process of desugaring effectively copies a lot of
 /// TargetCfg into DesugaredTargetCfg. This could be inefficient, but
 /// I don't know yet and don't intend to do anything that could be
@@ -64,13 +64,13 @@ pub struct Config {
 
 impl Config {
     // TODO: Do we even need Result? I don't think we ever fail?
-    pub fn desugar<'a>(self) -> Result<DesugaredConfig> {
+    pub fn desugar(self) -> Result<DesugaredConfig> {
         Ok(DesugaredConfig {
             options: Options {},
             targets: self
                 .targets
                 .into_iter()
-                .map(|t| Self::desugar_target(t, String::from(""))) // TODO: Avoid String::from()?
+                .map(|t| Self::desugar_target(t, ""))
                 .collect::<Result<Vec<Vec<DesugaredTargetCfg>>>>()?
                 .into_iter()
                 .flatten()
@@ -78,11 +78,11 @@ impl Config {
         })
     }
 
-    fn desugar_target<'a, T: AsRef<str>>(
+    fn desugar_target<T: AsRef<str>>(
         sugar: TargetCfg,
         prefix: T,
     ) -> Result<Vec<DesugaredTargetCfg>> {
-        let realized_name = if prefix.as_ref().len() > 0 {
+        let realized_name = if !prefix.as_ref().is_empty() {
             format!("{}-{}", prefix.as_ref(), sugar.name)
         } else {
             sugar.name
@@ -113,10 +113,9 @@ impl Config {
                 desugared_targets.extend(desugared_subtargets);
             }
         }
-        return Ok(desugared_targets);
+        Ok(desugared_targets)
     }
 
-    // TODO: This duplicates the logic in Chord.
     fn name_to_short<T: AsRef<str> + std::fmt::Display>(name: T) -> String {
         if name.as_ref().is_empty() {
             // This should fail validation, but it isn't our problem
@@ -125,8 +124,8 @@ impl Config {
         }
         // TODO: Eventually, this delimiter should be configured.
         name.as_ref()
-            .split("-")
-            .map(|segment| segment.chars().nth(0).unwrap().to_string())
+            .split('-')
+            .map(|segment| segment.chars().next().unwrap().to_string())
             .collect::<Vec<String>>()
             .join("-")
     }

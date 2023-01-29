@@ -35,10 +35,6 @@ pub struct Jam<'a> {
 pub struct Chord(pub Vec<String>);
 
 impl Chord {
-    fn from_name(name: &str) -> Chord {
-        Self::from_shortname(&Self::name_to_short(name))
-    }
-
     fn from_shortname(shortname: &str) -> Chord {
         Chord(
             shortname
@@ -46,15 +42,6 @@ impl Chord {
                 .map(|note| String::from(note))
                 .collect(),
         )
-    }
-
-    fn name_to_short<T: AsRef<str>>(name: T) -> String {
-        // TODO: Eventually, this delimiter should be configured.
-        name.as_ref()
-            .split("-")
-            .map(|segment| segment.chars().nth(0).unwrap().to_string())
-            .collect::<Vec<String>>()
-            .join("-")
     }
 }
 
