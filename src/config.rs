@@ -103,9 +103,15 @@ impl Config {
         let mut desugared_targets = vec![desugared];
         if let Some(targets) = sugar.targets {
             for target in targets {
-                // TODO: Investigate the prefix.clone() call below.
-                let desugared_subtargets =
-                    Config::desugar_target(target, prefix.clone() + &sugar.name)?;
+                let desugared_subtargets = Config::desugar_target(
+                    target,
+                    format!(
+                        "{}{}{}",
+                        prefix,
+                        if prefix.is_empty() { "" } else { "-" },
+                        sugar.name
+                    ),
+                )?;
                 // Note that the first element is always the root
                 // element of the recursion, so the first element of
                 // desugared_subtargets is going to be the desugared
