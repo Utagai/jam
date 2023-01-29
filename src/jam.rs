@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex};
 use radix_trie::{Trie, TrieKey};
 
-use crate::config::{Config, TargetCfg};
+use crate::config::{DesugaredConfig, DesugaredTargetCfg};
 
 struct Target<'a> {
     name: &'a str,
@@ -13,17 +13,12 @@ struct Target<'a> {
     cmd: Option<&'a str>,
 }
 
-impl<'a> From<&'a TargetCfg> for Target<'a> {
-    fn from(cfg: &'a TargetCfg) -> Self {
+impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
+    fn from(cfg: &'a DesugaredTargetCfg) -> Self {
         return Target {
             name: &cfg.name,
-            chord: cfg
-                .chord_str
-                .as_deref()
-                .map_or(Chord::from_name(&cfg.name), |chord_str| {
-                    Chord::from_shortname(&chord_str)
-                }),
-            help: cfg.help.as_deref().unwrap_or("no help provided"),
+            chord: Chord::from_shortname(&cfg.chord_str),
+            help: &cfg.help,
             cmd: cfg.cmd.as_deref(),
         };
     }
@@ -92,11 +87,11 @@ impl TrieKey for Chord {
 }
 
 impl<'a> Jam<'a> {
-    pub fn parse(cfg: &'a Config) -> Result<Jam<'a>> {
+    pub fn parse(cfg: &'a DesugaredConfig) -> Result<Jam<'a>> {
         let mut dag: Dag<Target, NIdx> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
-        let mut target_queue: VecDeque<&TargetCfg> = VecDeque::new();
+        let mut target_queue: VecDeque<&DesugaredTargetCfg> = VecDeque::new();
         let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
@@ -114,33 +109,16 @@ impl<'a> Jam<'a> {
             for _ in 0..queue_len {
                 // TODO: Maybe move the loop body into a function.
                 // The while loop condition guarantees this.
-                let target_cfg: &TargetCfg = target_queue.pop_front().unwrap();
+                let target_cfg: &DesugaredTargetCfg = target_queue.pop_front().unwrap();
                 Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
                 let target = Target::from(target_cfg);
                 let target_chord = target.chord.clone();
 
-                // Walk the dependencies.
-
-                // This is for recording the deps for edge
-                // construction later...
-                // TODO: The subtarget should have its name auto-prepended with its parent target.
-                if let Some(targets) = &target_cfg.targets {
-                    for subtarget in targets.into_iter() {
-                        deps.push((target.name, &subtarget.name));
-                        target_queue.push_back(subtarget);
-                    }
-                }
-
-                // ...but also to add subtargets to
-                // the queue so we can exhaustively visit all the
-                // targets in the config. Subtargets are also added as
-                // deps too, since they implicitly represent
-                // dependencies.
-                if let Some(target_deps) = &target_cfg.deps {
-                    for dep in target_deps {
-                        deps.push((target.name, dep));
-                    }
+                // Add dep links.
+                // TODO: With the parse simplifications, do we still need deps vec?
+                for dep in &target_cfg.deps {
+                    deps.push((target.name, &dep));
                 }
 
                 // Add this target as a node to the DAG.
@@ -205,7 +183,7 @@ impl<'a> Jam<'a> {
     }
 
     fn validate_target_cfg(
-        cfg: &TargetCfg,
+        cfg: &DesugaredTargetCfg,
         node_idxes: &HashMap<&str, NodeIndex<NIdx>>,
     ) -> Result<()> {
         // TODO: This should be validating short names too.
@@ -223,7 +201,7 @@ impl<'a> Jam<'a> {
             bail!("cannot have a '?' in a target name: '{}'", cfg.name)
         } else if node_idxes.contains_key(&cfg.name as &str) {
             bail!("duplicate target name: '{}'", cfg.name)
-        } else if cfg.deps.is_none() && cfg.targets.is_none() && cfg.cmd.is_none() {
+        } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
             bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
         }
 
@@ -271,6 +249,8 @@ mod tests {
 
     mod parse {
         use super::*;
+
+        use crate::config::{Config, TargetCfg};
 
         use daggy::Walker;
 
@@ -329,6 +309,10 @@ mod tests {
             }
         }
 
+        fn desugar(cfg: Config) -> DesugaredConfig {
+            cfg.desugar().expect("failed to desugar test config")
+        }
+
         mod target {
             use super::*;
 
@@ -367,15 +351,17 @@ mod tests {
         }
 
         impl Config {
-            fn with_targets(targets: Vec<TargetCfg>) -> Config {
+            fn with_targets(targets: Vec<TargetCfg>) -> DesugaredConfig {
                 Config {
                     options: Options {},
                     targets,
                 }
+                .desugar()
+                .expect("failed to desugar test config")
             }
         }
 
-        fn get_jam<'a>(cfg: &'a Config) -> Jam<'a> {
+        fn get_jam<'a>(cfg: &'a DesugaredConfig) -> Jam<'a> {
             Jam::parse(cfg).expect("expected no errors from parsing")
         }
 
@@ -383,7 +369,9 @@ mod tests {
             let cfg = Config {
                 options: Options {},
                 targets,
-            };
+            }
+            .desugar()
+            .expect("failed to desugar test config");
             if let Err(err) = Jam::parse(&cfg) {
                 assert_eq!(format!("{:?}", err).trim(), expected_err)
             } else {
@@ -406,12 +394,6 @@ mod tests {
 
             assert_eq!(jam.dag.node_count(), targets.len());
             assert_eq!(jam.dag.edge_count(), deps.len());
-        }
-
-        fn verify_jam_dags(jams: Vec<Jam>, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
-            for jam in jams {
-                verify_jam_dag(jam, targets, deps);
-            }
         }
 
         mod nodeps {
@@ -462,11 +444,9 @@ mod tests {
                 let subcfg =
                     Config::with_targets(vec![target::sub("foo", vec![target::lone("bar")])]);
                 let subjam = get_jam(&subcfg);
-                verify_jam_dags(
-                    vec![depjam, subjam],
-                    &vec!["foo", "bar"],
-                    &vec![("foo", "bar")],
-                );
+                // TODO: With the fixes to how we rename subtargets, this method of asserting is no longer correct.
+                verify_jam_dag(depjam, &vec!["foo", "bar"], &vec![("foo", "bar")]);
+                verify_jam_dag(subjam, &vec!["foo", "foo-bar"], &vec![("foo", "foo-bar")]);
             }
 
             #[test]
@@ -483,10 +463,15 @@ mod tests {
                     vec![target::lone("bar"), target::lone("quux")],
                 )]);
                 let subjam = get_jam(&subcfg);
-                verify_jam_dags(
-                    vec![depjam, subjam],
+                verify_jam_dag(
+                    depjam,
                     &vec!["foo", "bar", "quux"],
                     &vec![("foo", "bar"), ("foo", "quux")],
+                );
+                verify_jam_dag(
+                    subjam,
+                    &vec!["foo", "foo-bar", "foo-quux"],
+                    &vec![("foo", "foo-bar"), ("foo", "foo-quux")],
                 );
             }
 
@@ -515,10 +500,15 @@ mod tests {
                     target::sub("b", vec![target::lone("d")]),
                 ]);
                 let subjam = get_jam(&subcfg);
-                verify_jam_dags(
-                    vec![depjam, subjam],
+                verify_jam_dag(
+                    depjam,
                     &vec!["a", "b", "c", "d"],
                     &vec![("a", "c"), ("b", "d")],
+                );
+                verify_jam_dag(
+                    subjam,
+                    &vec!["a", "b", "a-c", "b-d"],
+                    &vec![("a", "a-c"), ("b", "b-d")],
                 );
             }
 
@@ -533,13 +523,14 @@ mod tests {
 
                 let subcfg = Config::with_targets(vec![
                     target::sub("a", vec![target::lone("c")]),
-                    target::dep("b", vec!["c"]),
+                    target::dep("b", vec!["a-c"]),
                 ]);
                 let subjam = get_jam(&subcfg);
-                verify_jam_dags(
-                    vec![depjam, subjam],
-                    &vec!["a", "b", "c"],
-                    &vec![("a", "c"), ("b", "c")],
+                verify_jam_dag(depjam, &vec!["a", "b", "c"], &vec![("a", "c"), ("b", "c")]);
+                verify_jam_dag(
+                    subjam,
+                    &vec!["a", "b", "a-c"],
+                    &vec![("a", "a-c"), ("b", "a-c")],
                 );
             }
         }
@@ -723,28 +714,9 @@ mod tests {
                     check_jam_err(
                         vec![
                             target::sub("foo", vec![target::lone("bar")]),
-                            target::lone("bar"),
+                            target::lone("foo-bar"),
                         ],
-                        "duplicate target name: 'bar'",
-                    );
-                }
-
-                #[test]
-                fn child_parent() {
-                    check_jam_err(
-                        vec![target::sub("foo", vec![target::lone("foo")])],
-                        "duplicate target name: 'foo'",
-                    );
-                }
-
-                #[test]
-                fn grand_child_parent() {
-                    check_jam_err(
-                        vec![target::sub(
-                            "foo",
-                            vec![target::sub("bar", vec![target::lone("foo")])],
-                        )],
-                        "duplicate target name: 'foo'",
+                        "duplicate target name: 'foo-bar'",
                     );
                 }
             }

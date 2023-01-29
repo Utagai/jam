@@ -3,7 +3,7 @@ use std::fs::File;
 use clap::Parser;
 
 use config::Config;
-use jam::{Chord, Jam};
+use jam::Jam;
 
 mod config;
 mod jam;
@@ -32,10 +32,10 @@ fn main() -> anyhow::Result<()> {
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
     let desugared_cfg = cfg.desugar()?;
     println!("{:#?}", desugared_cfg.targets);
-    Ok(())
-    // let cli = Cli::parse();
+    let cli = Cli::parse();
 
-    // let jam = Jam::parse(&cfg)?;
+    let jam = Jam::parse(&desugared_cfg)?;
 
     // jam.play(Chord(cli.chord))
+    Ok(())
 }
