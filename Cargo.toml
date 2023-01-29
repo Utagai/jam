@@ -11,3 +11,6 @@ either = "1.8.0"
 radix_trie = "0.2.1"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_yaml = "0.9.17"
+
+[dev-dependencies]
+pretty_assertions = "1.3.0"
