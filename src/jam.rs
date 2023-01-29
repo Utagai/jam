@@ -225,6 +225,7 @@ impl<'a> Jam<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::target;
 
     mod parse {
         use super::*;
@@ -272,58 +273,6 @@ mod tests {
                 }
 
                 return false;
-            }
-        }
-
-        fn desugar(cfg: Config) -> DesugaredConfig {
-            cfg.desugar().expect("failed to desugar test config")
-        }
-
-        mod target {
-            use super::*;
-
-            pub fn lone(name: &str) -> TargetCfg {
-                TargetCfg {
-                    name: String::from(name),
-                    chord_str: None,
-                    help: None,
-                    cmd: Some(String::from("blah")),
-                    targets: None,
-                    deps: None,
-                }
-            }
-
-            pub fn dep(name: &str, deps: Vec<&str>) -> TargetCfg {
-                TargetCfg {
-                    name: String::from(name),
-                    chord_str: None,
-                    help: None,
-                    cmd: None,
-                    targets: None,
-                    deps: Some(deps.iter().map(|dep| String::from(*dep)).collect()),
-                }
-            }
-
-            pub fn sub(name: &str, subs: Vec<TargetCfg>) -> TargetCfg {
-                TargetCfg {
-                    name: String::from(name),
-                    chord_str: None,
-                    help: None,
-                    cmd: None,
-                    targets: Some(subs),
-                    deps: None,
-                }
-            }
-        }
-
-        impl Config {
-            fn with_targets(targets: Vec<TargetCfg>) -> DesugaredConfig {
-                Config {
-                    options: Options {},
-                    targets,
-                }
-                .desugar()
-                .expect("failed to desugar test config")
             }
         }
 
@@ -497,116 +446,6 @@ mod tests {
                     subjam,
                     &vec!["a", "b", "a-c"],
                     &vec![("a", "a-c"), ("b", "a-c")],
-                );
-            }
-        }
-
-        mod shortnames {
-            use super::*;
-
-            impl Chord {
-                fn new(notes: Vec<&str>) -> Chord {
-                    Chord(notes.into_iter().map(|note| String::from(note)).collect())
-                }
-            }
-
-            #[test]
-            fn automatic_of_single_word_is_first_char() {
-                let cfg = Config::with_targets(vec![target::lone("foo")]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["f"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                )
-            }
-
-            #[test]
-            fn automatic_of_double_word_is_first_char() {
-                let cfg = Config::with_targets(vec![target::lone("foo-bar")]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["f", "b"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                );
-            }
-
-            #[test]
-            fn automatic_of_multi_word_is_first_char() {
-                let cfg = Config::with_targets(vec![target::lone("foo-bar-baz-quux")]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["f", "b", "b", "q"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                );
-            }
-
-            #[test]
-            fn automatic_of_multiple_non_conflicting_targets() {
-                let cfg = Config::with_targets(vec![
-                    target::lone("foo"),
-                    target::lone("bar"),
-                    target::lone("quux"),
-                ]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["f"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                );
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["b"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                );
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["q"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
-                );
-            }
-
-            #[test]
-            fn automatic_of_multiple_conflicting_targets_no_reconciliation() {
-                let cfg = Config::with_targets(vec![
-                    target::lone("bar"),
-                    target::lone("baz"),
-                    target::lone("bam"),
-                    target::lone("barr"),
-                ]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["b"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    4,
-                );
-            }
-
-            #[test]
-            fn override_respected() {
-                let cfg = Config::with_targets(vec![TargetCfg {
-                    name: String::from("foo"),
-                    chord_str: Some(String::from("x")),
-                    help: None,
-                    cmd: Some(String::from("blah")),
-                    targets: None,
-                    deps: None,
-                }]);
-                let jam = get_jam(&cfg);
-                assert_eq!(
-                    jam.get_targets_by_chord(Chord::new(vec!["x"]))
-                        .expect("expected to find the target by its expected chord")
-                        .len(),
-                    1,
                 );
             }
         }
