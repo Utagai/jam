@@ -123,6 +123,11 @@ impl Config {
 
     // TODO: This duplicates the logic in Chord.
     fn name_to_short<T: AsRef<str>>(name: T) -> String {
+        if name.as_ref().is_empty() {
+            // This should fail validation, but it isn't our problem
+            // right now.
+            return String::from("");
+        }
         // TODO: Eventually, this delimiter should be configured.
         name.as_ref()
             .split("-")
