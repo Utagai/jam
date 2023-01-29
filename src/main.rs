@@ -3,7 +3,7 @@ use std::fs::File;
 use clap::Parser;
 
 use config::Config;
-use jam::Jam;
+use jam::{Chord, Jam};
 
 mod config;
 mod jam;
@@ -24,17 +24,15 @@ struct Cli {
     dry_run: bool,
 
     /// Individual identifiers that together give a chord, uniquely identifying a jam command to execute.
-    notes: Vec<String>,
+    chord: Vec<String>,
 }
 
 fn main() -> anyhow::Result<()> {
     let cfg_file = File::open("./rsrc/simple.yaml")?;
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
     let cli = Cli::parse();
-    println!("{:#?}", cli);
-    println!("{:#?}", cfg);
 
-    let jam = Jam::parse(&cfg);
+    let jam = Jam::parse(&cfg)?;
 
-    return Ok(());
+    jam.play(Chord(cli.chord))
 }

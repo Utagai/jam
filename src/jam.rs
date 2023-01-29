@@ -39,7 +39,7 @@ pub struct Jam<'a> {
 }
 
 #[derive(Eq)]
-struct Chord(Vec<String>);
+pub struct Chord(pub Vec<String>);
 
 impl Chord {
     fn from_name(name: &str) -> Chord {
@@ -113,9 +113,9 @@ impl<'a> Jam<'a> {
         while !target_queue.is_empty() {
             let queue_len = target_queue.len();
             for _ in 0..queue_len {
-                let target_cfg: &TargetCfg = target_queue.pop_front().unwrap(); // The while loop condition guarantees this.
-                println!("Looking at target: {}", target_cfg.name);
-
+                // TODO: Maybe move the loop body into a function.
+                // The while loop condition guarantees this.
+                let target_cfg: &TargetCfg = target_queue.pop_front().unwrap();
                 Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
                 let target = Target::from(target_cfg);
@@ -125,6 +125,7 @@ impl<'a> Jam<'a> {
 
                 // This is for recording the deps for edge
                 // construction later...
+                // TODO: The subtarget should have its name auto-prepended with its parent target.
                 if let Some(targets) = &target_cfg.targets {
                     for subtarget in targets.into_iter() {
                         deps.push((target.name, &subtarget.name));
@@ -232,6 +233,36 @@ impl<'a> Jam<'a> {
 
     fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
         anyhow!("reference to nonexistent dep: {}", dep_name)
+    }
+
+    fn no_cmd_for_chord(chord: &Chord) -> anyhow::Error {
+        anyhow!("no command for given chord: '{}'", chord)
+    }
+
+    fn ambiguous_chord(&self, chord: &Chord, nidxes: &Vec<NodeIndex<NIdx>>) -> anyhow::Error {
+        anyhow!(
+            "given chord '{}' is ambiguous (i.e. is it {}?)",
+            chord,
+            nidxes
+                .iter()
+                .map(|nidx| format!("'{}'", self.dag[*nidx].name))
+                .collect::<Vec<String>>()
+                .join(" or "),
+        )
+    }
+
+    pub fn play(&self, chord: Chord) -> Result<()> {
+        let nidxes = self
+            .chords
+            .get(&chord)
+            .ok_or(Jam::no_cmd_for_chord(&chord))?; // TODO: We can do better with the error message here.
+        if nidxes.len() > 1 {
+            return Err(self.ambiguous_chord(&chord, nidxes));
+        }
+        // TODO: We need to handle conflicts here.
+        let target = &self.dag[*nidxes.first().unwrap()];
+        println!("found target for chord '{}': '{}'", chord, target.name);
+        Ok(())
     }
 }
 
