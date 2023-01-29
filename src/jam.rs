@@ -91,7 +91,6 @@ impl<'a> Jam<'a> {
         let mut dag: Dag<Target, NIdx> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
-        let mut target_queue: VecDeque<&DesugaredTargetCfg> = VecDeque::new();
         let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
@@ -99,63 +98,49 @@ impl<'a> Jam<'a> {
         // we currently have for finding a Target given a target_name.
         let mut trie: Trie<Chord, Vec<NodeIndex<NIdx>>> = Trie::new();
 
-        // Seed the queue with the root target cfgs:
-        target_queue.extend(cfg.targets.iter());
-
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
-        while !target_queue.is_empty() {
-            let queue_len = target_queue.len();
-            for _ in 0..queue_len {
-                // TODO: Maybe move the loop body into a function.
-                // The while loop condition guarantees this.
-                let target_cfg: &DesugaredTargetCfg = target_queue.pop_front().unwrap();
-                Self::validate_target_cfg(target_cfg, &node_idxes)?;
+        for target_cfg in &cfg.targets {
+            // TODO: Maybe move the loop body into a function.
+            // The while loop condition guarantees this.
+            Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
-                let target = Target::from(target_cfg);
-                let target_chord = target.chord.clone();
+            let target = Target::from(target_cfg);
+            let target_chord = target.chord.clone();
 
-                // Add dep links.
-                // TODO: With the parse simplifications, do we still need deps vec?
-                for dep in &target_cfg.deps {
-                    deps.push((target.name, &dep));
-                }
-
-                // Add this target as a node to the DAG.
-                let node_idx = dag.add_node(target);
-
-                // And add it to the trie under its chord.
-                // A natural question to ask here is about conflicts
-                // of chords. For example, if two targets both have
-                // the chord `t-a`, how can we disambiguate them? The
-                // approach we take here is actually laziness. The
-                // trie actually maps `t-a` to _two_ different targets
-                // in this case, and the idea is that at 'runtime',
-                // when the user has keyed in `t-a`, we will detect a
-                // vector of length > 1, and _at that time_ we will
-                // find their common prefix and use the remaining
-                // characters (or '.') to disambiguate. This is
-                // actually going to be more efficient, because doing
-                // the reconciliation here pays the cost on _every_
-                // jam startup, but the lazy approach only does it if
-                // the user is going to use an ambiguous chord, which
-                // may only be for very rare targets!
-                trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
-
-                // Record the root node indexes.
-                // This will only fill up to the amount of the _first_
-                // value of queue_len, which is going to be the number
-                // of nodes at the top level of the BFS -- this is
-                // precisely the set of root nodes, aka, the top-level
-                // targets.
-                if root_targets.len() < queue_len {
-                    root_targets.push(node_idx);
-                }
-
-                // And at last, record the mapping of target name to
-                // its node index.
-                node_idxes.insert(&target_cfg.name, node_idx);
+            // Add dep links.
+            // TODO: With the parse simplifications, do we still need deps vec?
+            for dep in &target_cfg.deps {
+                deps.push((target.name, &dep));
             }
+
+            // Add this target as a node to the DAG.
+            let node_idx = dag.add_node(target);
+
+            // And add it to the trie under its chord.
+            // A natural question to ask here is about conflicts
+            // of chords. For example, if two targets both have
+            // the chord `t-a`, how can we disambiguate them? The
+            // approach we take here is actually laziness. The
+            // trie actually maps `t-a` to _two_ different targets
+            // in this case, and the idea is that at 'runtime',
+            // when the user has keyed in `t-a`, we will detect a
+            // vector of length > 1, and _at that time_ we will
+            // find their common prefix and use the remaining
+            // characters (or '.') to disambiguate. This is
+            // actually going to be more efficient, because doing
+            // the reconciliation here pays the cost on _every_
+            // jam startup, but the lazy approach only does it if
+            // the user is going to use an ambiguous chord, which
+            // may only be for very rare targets!
+            trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
+
+            // Record the root node indexes.
+            root_targets.push(node_idx);
+
+            // And at last, record the mapping of target name to
+            // its node index.
+            node_idxes.insert(&target_cfg.name, node_idx);
         }
 
         // With their dependencies recorded, now add edges to the DAG
