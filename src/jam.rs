@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex};
@@ -108,8 +108,11 @@ impl<'a> Jam<'a> {
             let target = Target::from(target_cfg);
             let target_chord = target.chord.clone();
 
-            // Add dep links.
-            // TODO: With the parse simplifications, do we still need deps vec?
+            // Keep track of the dep links. Once all the targets have
+            // been visited, we can then wire up their edges in the
+            // DAG. We must do this separately because at the time of
+            // visiting, we cannot guarantee that the target this
+            // target is depending on has been visited yet.
             for dep in &target_cfg.deps {
                 deps.push((target.name, &dep));
             }
