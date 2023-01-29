@@ -1,7 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
 use anyhow::{anyhow, bail, Result};
-use daggy::Walker;
 use daggy::{Dag, NodeIndex};
 use radix_trie::{Trie, TrieKey};
 
@@ -272,6 +271,8 @@ mod tests {
 
     mod parse {
         use super::*;
+
+        use daggy::Walker;
 
         use crate::config::Options;
 
