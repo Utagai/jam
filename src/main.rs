@@ -30,9 +30,12 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cfg_file = File::open("./rsrc/simple.yaml")?;
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
-    let cli = Cli::parse();
+    let desugared_cfg = cfg.desugar()?;
+    println!("{:#?}", desugared_cfg.targets);
+    Ok(())
+    // let cli = Cli::parse();
 
-    let jam = Jam::parse(&cfg)?;
+    // let jam = Jam::parse(&cfg)?;
 
-    jam.play(Chord(cli.chord))
+    // jam.play(Chord(cli.chord))
 }

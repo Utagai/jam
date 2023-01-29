@@ -6,10 +6,10 @@ targets:
   - name: "bar"
     cmd: "echo 'bar'"
     targets:
-      - name: "bar-baz"
+      - name: "baz"
         help: "runs the baz command, duh"
         cmd: "echo 'baz'"
-      - name: "bar-qux"
+      - name: "qux"
         cmd: "echo 'bam'"
         deps:
           - "foo"
