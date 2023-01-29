@@ -63,25 +63,21 @@ pub struct Config {
 }
 
 impl Config {
-    // TODO: Do we even need Result? I don't think we ever fail?
-    pub fn desugar(self) -> Result<DesugaredConfig> {
-        Ok(DesugaredConfig {
+    pub fn desugar(self) -> DesugaredConfig {
+        DesugaredConfig {
             options: Options {},
             targets: self
                 .targets
                 .into_iter()
                 .map(|t| Self::desugar_target(t, ""))
-                .collect::<Result<Vec<Vec<DesugaredTargetCfg>>>>()?
+                .collect::<Vec<Vec<DesugaredTargetCfg>>>()
                 .into_iter()
                 .flatten()
                 .collect(),
-        })
+        }
     }
 
-    fn desugar_target<T: AsRef<str>>(
-        sugar: TargetCfg,
-        prefix: T,
-    ) -> Result<Vec<DesugaredTargetCfg>> {
+    fn desugar_target<T: AsRef<str>>(sugar: TargetCfg, prefix: T) -> Vec<DesugaredTargetCfg> {
         let realized_name = if !prefix.as_ref().is_empty() {
             format!("{}-{}", prefix.as_ref(), sugar.name)
         } else {
@@ -101,7 +97,7 @@ impl Config {
         let mut desugared_targets = vec![desugared];
         if let Some(targets) = sugar.targets {
             for target in targets {
-                let desugared_subtargets = Config::desugar_target(target, &realized_name)?;
+                let desugared_subtargets = Config::desugar_target(target, &realized_name);
                 // Note that the first element is always the root
                 // element of the recursion, so the first element of
                 // desugared_subtargets is going to be the desugared
@@ -113,7 +109,7 @@ impl Config {
                 desugared_targets.extend(desugared_subtargets);
             }
         }
-        Ok(desugared_targets)
+        desugared_targets
     }
 
     fn name_to_short<T: AsRef<str> + std::fmt::Display>(name: T) -> String {
@@ -177,7 +173,6 @@ impl Config {
             targets,
         }
         .desugar()
-        .expect("failed to desugar test config")
     }
 }
 

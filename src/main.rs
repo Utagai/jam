@@ -30,7 +30,7 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cfg_file = File::open("./rsrc/simple.yaml")?;
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
-    let desugared_cfg = cfg.desugar()?;
+    let desugared_cfg = cfg.desugar();
     println!("{:#?}", desugared_cfg.targets);
     let cli = Cli::parse();
 

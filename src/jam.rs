@@ -272,8 +272,7 @@ mod tests {
                 options: Options {},
                 targets,
             }
-            .desugar()
-            .expect("failed to desugar test config");
+            .desugar();
             if let Err(err) = Jam::parse(&cfg) {
                 assert_eq!(format!("{:?}", err).trim(), expected_err)
             } else {
