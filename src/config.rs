@@ -53,6 +53,7 @@ pub struct TargetCfg {
 #[derive(Debug, Deserialize)]
 pub struct Options {}
 
+// TODO: Is 'desugaring' the word we are actually looking for?
 #[derive(Debug)]
 pub struct DesugaredConfig {
     pub options: Options,
@@ -67,6 +68,7 @@ pub struct Config {
 }
 
 impl Config {
+    // TODO: Do we even need Result? I don't think we ever fail?
     pub fn desugar(self) -> Result<DesugaredConfig> {
         Ok(DesugaredConfig {
             options: Options {},
@@ -82,13 +84,15 @@ impl Config {
     }
 
     fn desugar_target(sugar: TargetCfg, prefix: String) -> Result<Vec<DesugaredTargetCfg>> {
+        let realized_name = if prefix.len() > 0 {
+            format!("{}-{}", prefix, sugar.name)
+        } else {
+            sugar.name.clone() // TODO: clone
+        };
+        let chord_str = Self::name_to_short(&realized_name);
         let desugared = DesugaredTargetCfg {
-            name: if prefix.len() > 0 {
-                format!("{}-{}", prefix, sugar.name)
-            } else {
-                sugar.name.clone() // TODO: clone
-            },
-            chord_str: sugar.chord_str.unwrap_or(Self::name_to_short(&sugar.name)),
+            name: realized_name,
+            chord_str: sugar.chord_str.unwrap_or(chord_str),
             help: sugar.help.unwrap_or("no help provided".to_string()),
             cmd: sugar.cmd,
             deps: sugar.deps.unwrap_or(vec![]),
