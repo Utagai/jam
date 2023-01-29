@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex};
-use radix_trie::{Trie, TrieKey};
+use radix_trie::{Trie, TrieCommon, TrieKey};
 
 use crate::config::{DesugaredConfig, DesugaredTargetCfg};
 
@@ -27,7 +27,6 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 type NIdx = u32;
 
 pub struct Jam<'a> {
-    root_targets: Vec<NodeIndex<NIdx>>,
     dag: Dag<Target<'a>, NIdx>,
     chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
 }
@@ -91,7 +90,6 @@ impl<'a> Jam<'a> {
         let mut dag: Dag<Target, NIdx> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
-        let mut root_targets: Vec<NodeIndex<NIdx>> = Vec::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
@@ -138,9 +136,6 @@ impl<'a> Jam<'a> {
             // may only be for very rare targets!
             trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
 
-            // Record the root node indexes.
-            root_targets.push(node_idx);
-
             // And at last, record the mapping of target name to
             // its node index.
             node_idxes.insert(&target_cfg.name, node_idx);
@@ -163,11 +158,7 @@ impl<'a> Jam<'a> {
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
         }
 
-        Ok(Jam {
-            root_targets,
-            dag,
-            chords: trie,
-        })
+        Ok(Jam { dag, chords: trie })
     }
 
     fn validate_target_cfg(
@@ -245,30 +236,19 @@ mod tests {
         use crate::config::Options;
 
         impl<'a> Jam<'a> {
-            fn node_has_target(
-                &self,
-                nidx: &NodeIndex<NIdx>,
-                target_name: &str,
-            ) -> Option<NodeIndex<NIdx>> {
-                if self.dag[*nidx].name == target_name {
-                    return Some(*nidx);
-                }
-
-                self.dag
-                    .children(*nidx)
-                    .iter(&self.dag)
-                    .map(|(_, n)| self.node_has_target(&n, target_name))
-                    .find(|n| n.is_some())
-                    .flatten()
+            fn node_has_target(&self, target_name: &str) -> Option<NodeIndex<NIdx>> {
+                self.chords
+                    .iter()
+                    .flat_map(|kv| kv.1.clone())
+                    .find(|nidx| self.dag[*nidx].name == target_name)
             }
 
             fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
-                self.root_targets
+                self.chords
                     .iter()
-                    .map(|root| self.node_has_target(root, target_name))
-                    .find(|found_node| found_node.is_some())
-                    .flatten()
-                    .map(|node_idx| &self.dag[node_idx])
+                    .flat_map(|kv| kv.1.clone())
+                    .map(|nidx| &self.dag[nidx])
+                    .find(|target| target.name == target_name)
             }
 
             fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<NIdx>>> {
@@ -280,17 +260,15 @@ mod tests {
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
-                for root in &self.root_targets {
-                    let depender_idx = self.node_has_target(root, dependee);
-                    let dependent_idx = self.node_has_target(root, dependent);
-                    if match depender_idx.zip(dependent_idx) {
-                        Some((depender_idx, dependent_idx)) => {
-                            self.dag.find_edge(depender_idx, dependent_idx).is_some()
-                        }
-                        None => false,
-                    } {
-                        return true;
+                let depender_idx = self.node_has_target(dependee);
+                let dependent_idx = self.node_has_target(dependent);
+                if match depender_idx.zip(dependent_idx) {
+                    Some((depender_idx, dependent_idx)) => {
+                        self.dag.find_edge(depender_idx, dependent_idx).is_some()
                     }
+                    None => false,
+                } {
+                    return true;
                 }
 
                 return false;
