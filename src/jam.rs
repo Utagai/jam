@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
-use daggy::{Dag, NodeIndex};
+use daggy::{Dag, NodeIndex, Walker};
 use radix_trie::{Trie, TrieKey};
 
 use crate::config::{DesugaredConfig, DesugaredTargetCfg};
@@ -169,6 +169,7 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
+    // TODO: Should these functions be replaced with an Error enum?
     fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
         anyhow!("reference to nonexistent dep: {}", dep_name)
     }
@@ -189,6 +190,10 @@ impl<'a> Jam<'a> {
         )
     }
 
+    fn cannot_exec_cmd(target: &Target) -> anyhow::Error {
+        anyhow!("target '{}' has no executable function", target.name)
+    }
+
     pub fn play(&self, chord: Chord) -> Result<()> {
         let nidxes = self
             .chords
@@ -197,10 +202,22 @@ impl<'a> Jam<'a> {
         if nidxes.len() > 1 {
             return Err(self.ambiguous_chord(&chord, nidxes));
         }
-        // TODO: We need to handle conflicts here.
-        let target = &self.dag[*nidxes.first().unwrap()];
-        println!("found target for chord '{}': '{}'", chord, target.name);
-        Ok(())
+        if let Some(nidx) = nidxes.first() {
+            let deps = self.dag.children(*nidx);
+            for dep in deps.iter(&self.dag) {
+                println!("\tdep: {:?}", self.dag[dep.1].name);
+            }
+            let target = &self.dag[*nidx];
+            println!("found target for chord '{}': '{}'", chord, target.name);
+            if let Some(cmd) = target.cmd {
+                println!("executing: {cmd}");
+            } else {
+                bail!(Jam::cannot_exec_cmd(target))
+            }
+            Ok(())
+        } else {
+            bail!(Jam::no_cmd_for_chord(&chord))
+        }
     }
 }
 

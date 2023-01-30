@@ -3,7 +3,7 @@ use std::fs::File;
 use clap::Parser;
 
 use config::Config;
-use jam::Jam;
+use jam::{Chord, Jam};
 
 mod config;
 mod jam;
@@ -36,6 +36,5 @@ fn main() -> anyhow::Result<()> {
 
     let jam = Jam::parse(&desugared_cfg)?;
 
-    // jam.play(Chord(cli.chord))
-    Ok(())
+    jam.play(Chord(cli.chord))
 }

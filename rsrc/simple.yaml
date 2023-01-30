@@ -13,3 +13,10 @@ targets:
         cmd: "echo 'bam'"
         deps:
           - "foo"
+  - name: "nocmd"
+    targets:
+      - name: "corge"
+        help: "runs the baz command, duh"
+        cmd: "echo 'baz'"
+      - name: "delta"
+        cmd: "echo 'bam'"
