@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex};
-use radix_trie::{Trie, TrieCommon, TrieKey};
+use radix_trie::{Trie, TrieKey};
 
 use crate::config::{DesugaredConfig, DesugaredTargetCfg};
 
@@ -36,12 +36,7 @@ pub struct Chord(pub Vec<String>);
 
 impl Chord {
     fn from_shortname(shortname: &str) -> Chord {
-        Chord(
-            shortname
-                .split("-")
-                .map(|note| String::from(note))
-                .collect(),
-        )
+        Chord(shortname.split('-').map(String::from).collect())
     }
 }
 
@@ -62,7 +57,7 @@ impl std::fmt::Display for Chord {
 
 impl Clone for Chord {
     fn clone(&self) -> Self {
-        Chord(self.0.iter().map(|note| note.clone()).collect())
+        Chord(self.0.to_vec())
     }
 }
 
@@ -99,7 +94,7 @@ impl<'a> Jam<'a> {
             // visiting, we cannot guarantee that the target this
             // target is depending on has been visited yet.
             for dep in &target_cfg.deps {
-                deps.push((target.name, &dep));
+                deps.push((target.name, dep));
             }
 
             // Add this target as a node to the DAG.
@@ -153,9 +148,9 @@ impl<'a> Jam<'a> {
         node_idxes: &HashMap<&str, NodeIndex<NIdx>>,
     ) -> Result<()> {
         // TODO: This should be validating short names too.
-        if cfg.name.len() == 0 {
+        if cfg.name.is_empty() {
             bail!("cannot have an empty target name")
-        } else if cfg.name.contains(".") {
+        } else if cfg.name.contains('.') {
             // TODO: This and its sibling, '?', should have
             // its checks changed to be more permissive --
             // they're only not allowed _after_ a delimiter,
@@ -163,7 +158,7 @@ impl<'a> Jam<'a> {
             // else is actually fine. e.g. foo.bar-baz is
             // actually fine!
             bail!("cannot have a '.' in a target name: '{}'", cfg.name)
-        } else if cfg.name.contains("?") {
+        } else if cfg.name.contains('?') {
             bail!("cannot have a '?' in a target name: '{}'", cfg.name)
         } else if node_idxes.contains_key(&cfg.name as &str) {
             bail!("duplicate target name: '{}'", cfg.name)
@@ -182,7 +177,7 @@ impl<'a> Jam<'a> {
         anyhow!("no command for given chord: '{}'", chord)
     }
 
-    fn ambiguous_chord(&self, chord: &Chord, nidxes: &Vec<NodeIndex<NIdx>>) -> anyhow::Error {
+    fn ambiguous_chord(&self, chord: &Chord, nidxes: &[NodeIndex<NIdx>]) -> anyhow::Error {
         anyhow!(
             "given chord '{}' is ambiguous (i.e. is it {}?)",
             chord,
@@ -213,13 +208,12 @@ impl<'a> Jam<'a> {
 mod tests {
     use super::*;
     use crate::config::target;
+    use radix_trie::TrieCommon;
 
     mod parse {
         use super::*;
 
         use crate::config::{Config, TargetCfg};
-
-        use daggy::Walker;
 
         use crate::config::Options;
 
@@ -259,11 +253,11 @@ mod tests {
                     return true;
                 }
 
-                return false;
+                false
             }
         }
 
-        fn get_jam<'a>(cfg: &'a DesugaredConfig) -> Jam<'a> {
+        fn get_jam(cfg: &DesugaredConfig) -> Jam {
             Jam::parse(cfg).expect("expected no errors from parsing")
         }
 
@@ -274,7 +268,7 @@ mod tests {
             }
             .desugar();
             if let Err(err) = Jam::parse(&cfg) {
-                assert_eq!(format!("{:?}", err).trim(), expected_err)
+                assert_eq!(format!("{err}").trim(), expected_err)
             } else {
                 panic!("expected an error from parsing, but got none")
             }
@@ -327,7 +321,7 @@ mod tests {
                 let jam = get_jam(&cfg);
                 expected_target_names
                     .iter()
-                    .for_each(|name| assert!(jam.has_target(&name)));
+                    .for_each(|name| assert!(jam.has_target(name)));
                 verify_jam_dag(jam, &expected_target_names, &vec![]);
             }
         }
