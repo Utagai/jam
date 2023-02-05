@@ -3,6 +3,7 @@ targets:
   - name: "foo"
     chord: "f"
     cmd: "echo 'foo'"
+    execute_kind: "dryrun"
   - name: "bar"
     cmd: "echo 'bar'"
     targets:

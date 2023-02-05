@@ -503,6 +503,7 @@ mod tests {
                             cmd: None,
                             targets: None,
                             deps: None,
+														execute_kind: None,
                         }],
                         "a command without an executable command must have dependencies or subtargets, but 'foo' does not",
                     )

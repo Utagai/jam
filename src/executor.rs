@@ -2,10 +2,12 @@ use core::fmt;
 use std::collections::HashMap;
 
 use anyhow::Result;
+use serde::Deserialize;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-#[derive(Eq, PartialEq, Hash, EnumIter)]
+#[derive(Eq, PartialEq, Hash, EnumIter, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum ExecuteKind {
     DryRun,
     Shell,

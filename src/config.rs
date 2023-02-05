@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::executor::ExecuteKind;
+
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
 /// re-written and simplified so that the parsing logic can be
 /// significantly easier. TargetCfg by itself is sufficient, but
@@ -27,6 +29,7 @@ pub struct DesugaredTargetCfg {
     pub help: String,
     pub cmd: Option<String>,
     pub deps: Vec<String>,
+    pub execute_kind: ExecuteKind,
 }
 
 // TODO: Exercise - can we use &str in any of these fields?
@@ -39,6 +42,7 @@ pub struct TargetCfg {
     pub cmd: Option<String>,
     pub targets: Option<Vec<TargetCfg>>,
     pub deps: Option<Vec<String>>,
+    pub execute_kind: Option<ExecuteKind>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -89,6 +93,7 @@ impl Config {
             help: sugar.help.unwrap_or("no help provided".to_string()),
             cmd: sugar.cmd,
             deps: sugar.deps.unwrap_or(vec![]),
+            execute_kind: sugar.execute_kind.unwrap_or(ExecuteKind::Shell),
         };
         // This will hold all the subtargets underneath the current
         // target. We are effectively flattening the config here as
@@ -138,6 +143,7 @@ pub mod target {
             cmd: Some(String::from("blah")),
             targets: None,
             deps: None,
+            execute_kind: None,
         }
     }
 
@@ -149,6 +155,7 @@ pub mod target {
             cmd: None,
             targets: None,
             deps: Some(deps.iter().map(|dep| String::from(*dep)).collect()),
+            execute_kind: None,
         }
     }
 
@@ -160,6 +167,7 @@ pub mod target {
             cmd: None,
             targets: Some(subs),
             deps: None,
+            execute_kind: None,
         }
     }
 }
@@ -190,6 +198,7 @@ mod tests {
                 help: String::from("no help provided"),
                 cmd: Some(String::from("blah")),
                 deps: vec![],
+                execute_kind: ExecuteKind::Shell,
             }
         }
 
@@ -200,6 +209,7 @@ mod tests {
                 help: String::from("no help provided"),
                 cmd: None,
                 deps: deps.iter().map(|s| s.to_string()).collect(),
+                execute_kind: ExecuteKind::Shell,
             }
         }
     }
@@ -369,6 +379,7 @@ mod tests {
                 cmd: Some(String::from("blah")),
                 targets: None,
                 deps: None,
+                execute_kind: None,
             }]);
             assert_eq!(
                 cfg,
