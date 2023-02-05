@@ -4,7 +4,10 @@ use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex, Walker};
 use radix_trie::{Trie, TrieKey};
 
-use crate::config::{DesugaredConfig, DesugaredTargetCfg};
+use crate::{
+    config::{DesugaredConfig, DesugaredTargetCfg},
+    executor::Executor,
+};
 
 struct Target<'a> {
     name: &'a str,
@@ -27,6 +30,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 type NIdx = u32;
 
 pub struct Jam<'a> {
+    executor: Executor,
     dag: Dag<Target<'a>, NIdx>,
     chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
 }
@@ -68,7 +72,7 @@ impl TrieKey for Chord {
 }
 
 impl<'a> Jam<'a> {
-    pub fn parse(cfg: &'a DesugaredConfig) -> Result<Jam<'a>> {
+    pub fn new(executor: Executor, cfg: &'a DesugaredConfig) -> Result<Jam<'a>> {
         let mut dag: Dag<Target, NIdx> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
@@ -140,7 +144,11 @@ impl<'a> Jam<'a> {
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
         }
 
-        Ok(Jam { dag, chords: trie })
+        Ok(Jam {
+            executor,
+            dag,
+            chords: trie,
+        })
     }
 
     fn validate_target_cfg(
@@ -275,7 +283,7 @@ mod tests {
         }
 
         fn get_jam(cfg: &DesugaredConfig) -> Jam {
-            Jam::parse(cfg).expect("expected no errors from parsing")
+            Jam::new(Executor::new(), cfg).expect("expected no errors from parsing")
         }
 
         fn check_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
@@ -284,7 +292,7 @@ mod tests {
                 targets,
             }
             .desugar();
-            if let Err(err) = Jam::parse(&cfg) {
+            if let Err(err) = Jam::new(Executor::new(), &cfg) {
                 assert_eq!(format!("{err}").trim(), expected_err)
             } else {
                 panic!("expected an error from parsing, but got none")

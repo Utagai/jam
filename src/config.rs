@@ -1,4 +1,3 @@
-use anyhow::Result;
 use serde::Deserialize;
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been

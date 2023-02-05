@@ -5,7 +5,10 @@ use clap::Parser;
 use config::Config;
 use jam::{Chord, Jam};
 
+use crate::executor::Executor;
+
 mod config;
+mod executor;
 mod jam;
 
 // TODO: This clap help text is using unicode characters. Is there a
@@ -33,8 +36,9 @@ fn main() -> anyhow::Result<()> {
     let desugared_cfg = cfg.desugar();
     println!("{:#?}", desugared_cfg.targets);
     let cli = Cli::parse();
+    let executor = Executor::new();
 
-    let jam = Jam::parse(&desugared_cfg)?;
+    let jam = Jam::new(executor, &desugared_cfg)?;
 
     jam.play(Chord(cli.chord))
 }
