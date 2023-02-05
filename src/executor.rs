@@ -6,7 +6,7 @@ use serde::Deserialize;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-#[derive(Eq, PartialEq, Hash, EnumIter, Deserialize, Debug)]
+#[derive(Eq, Copy, Clone, PartialEq, Hash, EnumIter, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecuteKind {
     DryRun,

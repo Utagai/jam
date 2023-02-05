@@ -6,7 +6,7 @@ use radix_trie::{Trie, TrieKey};
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg},
-    executor::Executor,
+    executor::{ExecuteKind, Executor},
 };
 
 struct Target<'a> {
@@ -14,6 +14,7 @@ struct Target<'a> {
     chord: Chord,
     help: &'a str,
     cmd: Option<&'a str>,
+    execute_kind: ExecuteKind,
 }
 
 impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
@@ -23,6 +24,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
             chord: Chord::from_shortname(&cfg.chord_str),
             help: &cfg.help,
             cmd: cfg.cmd.as_deref(),
+            execute_kind: cfg.execute_kind,
         };
     }
 }
@@ -202,6 +204,9 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
+    // TODO: I think rename play, chord, notes, etc terminology?
+    // Namely, I think a chord is for _simultaneous_ notes, not in sequence.
+    // That is a chord _progression_... and that doesn't ring off the tongue very well, now does it?
     pub fn play(&self, chord: Chord) -> Result<()> {
         let nidxes = self
             .chords
@@ -218,7 +223,11 @@ impl<'a> Jam<'a> {
             let target = &self.dag[*nidx];
             println!("found target for chord '{}': '{}'", chord, target.name);
             if let Some(cmd) = target.cmd {
-                println!("executing: {cmd}");
+                if self.executor.execute(target.execute_kind, cmd)? {
+                    println!("\tSuccessfully executed!")
+                } else {
+                    println!("\tFailed to execute!")
+                }
             } else {
                 bail!(Jam::cannot_exec_cmd(target))
             }
