@@ -23,6 +23,7 @@ mod jam;
 #[derive(Parser, Debug)]
 struct Cli {
     /// Show what jam _would_ do, but don't actually do it.
+    /// TODO: This isn't actually honored or implemented.
     #[clap(short, long, value_parser, default_value_t = false)]
     dry_run: bool,
 
@@ -34,7 +35,7 @@ fn main() -> anyhow::Result<()> {
     let cfg_file = File::open("./rsrc/simple.yaml")?;
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
     let desugared_cfg = cfg.desugar();
-    println!("{:#?}", desugared_cfg.targets);
+    // println!("{:#?}", desugared_cfg.targets);
     let cli = Cli::parse();
     let executor = Executor::new();
 

@@ -29,6 +29,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
     }
 }
 
+// TODO: Maybe also alias NodeIndex<NIdx> and rename this cause its not the index type?
 type NIdx = u32;
 
 pub struct Jam<'a> {
@@ -204,6 +205,28 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
+    fn execute_target(&self, nidx: NodeIndex<NIdx>) -> Result<()> {
+        let deps = self.dag.children(nidx);
+        let mut num_deps_execed = 0;
+        for dep in deps.iter(&self.dag) {
+            println!("\tExecuting dependency: {:?}", self.dag[dep.1].name);
+            self.execute_target(dep.1)?;
+            num_deps_execed += 1;
+        }
+        let target = &self.dag[nidx];
+        println!("found target: '{}'", target.name);
+        if let Some(cmd) = target.cmd {
+            if self.executor.execute(target.execute_kind, cmd)? {
+                println!("\tSuccessfully executed!")
+            } else {
+                println!("\tFailed to execute!")
+            }
+        } else if num_deps_execed <= 0 {
+            bail!(Jam::cannot_exec_cmd(target))
+        }
+        Ok(())
+    }
+
     // TODO: I think rename play, chord, notes, etc terminology?
     // Namely, I think a chord is for _simultaneous_ notes, not in sequence.
     // That is a chord _progression_... and that doesn't ring off the tongue very well, now does it?
@@ -216,22 +239,7 @@ impl<'a> Jam<'a> {
             return Err(self.ambiguous_chord(&chord, nidxes));
         }
         if let Some(nidx) = nidxes.first() {
-            let deps = self.dag.children(*nidx);
-            for dep in deps.iter(&self.dag) {
-                println!("\tdep: {:?}", self.dag[dep.1].name);
-            }
-            let target = &self.dag[*nidx];
-            println!("found target for chord '{}': '{}'", chord, target.name);
-            if let Some(cmd) = target.cmd {
-                if self.executor.execute(target.execute_kind, cmd)? {
-                    println!("\tSuccessfully executed!")
-                } else {
-                    println!("\tFailed to execute!")
-                }
-            } else {
-                bail!(Jam::cannot_exec_cmd(target))
-            }
-            Ok(())
+            self.execute_target(*nidx)
         } else {
             bail!(Jam::no_cmd_for_chord(&chord))
         }
