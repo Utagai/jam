@@ -9,7 +9,7 @@ targets:
     targets:
       - name: "baz"
         help: "runs the baz command, duh"
-        cmd: "echo 'baz'"
+        cmd: "echo 'just ran bar-baz! with '$SHELL"
       - name: "qux"
         cmd: "echo 'bam'"
         deps:

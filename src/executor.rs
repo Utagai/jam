@@ -85,23 +85,37 @@ impl DryRunner {
 
 impl Executable for DryRunner {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("Executing cmd: {}", cmd);
+        println!("Dry running cmd: {}", cmd);
         Ok(true)
     }
 }
 
-pub struct Shell {}
+pub struct Shell {
+    shell: String,
+    exec_flag: &'static str,
+}
 
 impl Shell {
     pub fn new() -> Shell {
-        Shell {}
+        let shell = std::env::var("SHELL").map_or(String::from("bash"), |oss| oss.to_string());
+        Shell {
+            shell,
+            exec_flag: "-c",
+        }
     }
 }
 
 impl Executable for Shell {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("Executing cmd: {}", cmd);
-        Ok(true)
+        println!(
+            "Executing cmd: {}",
+            format!("{} {} '{}'", self.shell, self.exec_flag, cmd)
+        );
+        let exit_status = std::process::Command::new(&self.shell)
+            .arg(self.exec_flag)
+            .arg(cmd)
+            .status()?;
+        Ok(exit_status.code() == Some(0))
     }
 }
 
@@ -116,7 +130,7 @@ impl Mock {
 
 impl Executable for Mock {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("Executing cmd: {}", cmd);
+        println!("Mocking cmd: {}", cmd);
         Ok(true)
     }
 }

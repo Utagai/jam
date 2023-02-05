@@ -14,6 +14,8 @@ use crate::executor::ExecuteKind;
 ///  names. This is done recursively (e.g. the parent itself may be
 ///  prefixed).
 /// * Subtarget sections are flattened (post-prefixing) into deps.
+/// * Removing Option types and replacing them with guaranteed values
+///  when possible.
 /// TODO: The process of desugaring effectively copies a lot of
 /// TargetCfg into DesugaredTargetCfg. This could be inefficient, but
 /// I don't know yet and don't intend to do anything that could be
