@@ -29,13 +29,13 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
     }
 }
 
-// TODO: Maybe also alias NodeIndex<NIdx> and rename this cause its not the index type?
-type NIdx = u32;
+type IdxT = u32;
+type NodeIdx = NodeIndex<IdxT>;
 
 pub struct Jam<'a> {
     executor: Executor,
-    dag: Dag<Target<'a>, NIdx>,
-    chords: Trie<Chord, Vec<NodeIndex<NIdx>>>,
+    dag: Dag<Target<'a>, IdxT>,
+    chords: Trie<Chord, Vec<NodeIdx>>,
 }
 
 #[derive(Eq)]
@@ -76,14 +76,14 @@ impl TrieKey for Chord {
 
 impl<'a> Jam<'a> {
     pub fn new(executor: Executor, cfg: &'a DesugaredConfig) -> Result<Jam<'a>> {
-        let mut dag: Dag<Target, NIdx> = Dag::new();
+        let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
-        let mut node_idxes: HashMap<&str, NodeIndex<NIdx>> = HashMap::new();
+        let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
         // TODO: We should flip it so that the Trie stores the Target,
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
         // we currently have for finding a Target given a target_name.
-        let mut trie: Trie<Chord, Vec<NodeIndex<NIdx>>> = Trie::new();
+        let mut trie: Trie<Chord, Vec<NodeIdx>> = Trie::new();
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
@@ -156,7 +156,7 @@ impl<'a> Jam<'a> {
 
     fn validate_target_cfg(
         cfg: &DesugaredTargetCfg,
-        node_idxes: &HashMap<&str, NodeIndex<NIdx>>,
+        node_idxes: &HashMap<&str, NodeIdx>,
     ) -> Result<()> {
         // TODO: This should be validating short names too.
         if cfg.name.is_empty() {
@@ -189,7 +189,7 @@ impl<'a> Jam<'a> {
         anyhow!("no command for given chord: '{}'", chord)
     }
 
-    fn ambiguous_chord(&self, chord: &Chord, nidxes: &[NodeIndex<NIdx>]) -> anyhow::Error {
+    fn ambiguous_chord(&self, chord: &Chord, nidxes: &[NodeIdx]) -> anyhow::Error {
         anyhow!(
             "given chord '{}' is ambiguous (i.e. is it {}?)",
             chord,
@@ -205,7 +205,7 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
-    fn execute_target(&self, nidx: NodeIndex<NIdx>) -> Result<()> {
+    fn execute_target(&self, nidx: NodeIdx) -> Result<()> {
         let deps = self.dag.children(nidx);
         let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
@@ -260,7 +260,7 @@ mod tests {
         use crate::config::Options;
 
         impl<'a> Jam<'a> {
-            fn node_has_target(&self, target_name: &str) -> Option<NodeIndex<NIdx>> {
+            fn node_has_target(&self, target_name: &str) -> Option<NodeIdx> {
                 self.chords
                     .iter()
                     .flat_map(|kv| kv.1.clone())
@@ -275,7 +275,7 @@ mod tests {
                     .find(|target| target.name == target_name)
             }
 
-            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIndex<NIdx>>> {
+            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIdx>> {
                 self.chords.get(&chord)
             }
 
