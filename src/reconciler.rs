@@ -84,8 +84,25 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
+    macro_rules! chord {
+		    ( $( $x:expr ),* ) => {
+		        {
+		            let mut temp_vec = Vec::new();
+		            $(
+		                temp_vec.push(String::from($x));
+		            )*
+		            Chord(temp_vec)
+		        }
+		    };
+		}
+
+    // Shorthand for Err(reconciliation_err()).
+    fn rerr(chord: Chord, a: &str, b: &str) -> Result {
+        Err(reconciliation_err(chord, a, b))
+    }
+
     #[rstest]
-    #[case::fooey(Chord(vec![String::from("f")]), "foo", "far", Err(reconciliation_err(Chord(vec![String::from("f")]), "foo", "far")))]
+    #[case::fooey(chord!["f"], "foo", "far", rerr(chord!["f"], "foo", "far"))]
     fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
         let trie = Trie::new();
         let res = first_nonmatch(&trie, chord, a, b);
