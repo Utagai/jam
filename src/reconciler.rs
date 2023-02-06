@@ -83,3 +83,35 @@ pub fn reconcile(
 
     reconciler(chords, a, ac, b, bc)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(trie: ChordTrie, a: &str, ac: Chord, b: &str, bc: Chord, expected: Result) {
+        let res = first_nonmatch(&trie, a, ac, b, bc);
+        match expected {
+            Ok(chords) => assert_eq!(chords, res.expect("expected no error")),
+            Err(err) => assert_eq!(
+                format!("{:#?}", err),
+                format!("{:#?}", res.expect_err("expected an error"))
+            ),
+        }
+    }
+
+    macro_rules! reconciliation_tests {
+    ($($name:ident: $value:expr,)*) => {
+    $(
+        #[test]
+        fn $name() {
+            let (trie, a, ac, b, bc, expected) = $value;
+						check(trie, a, ac, b, bc, expected);
+        }
+    )*
+    }
+}
+
+    reconciliation_tests! {
+            blah: (Trie::new(), "foo", Chord(vec![String::from("f")]), "far", Chord(vec![String::from("f")]), Err(reconciliation_err(Chord(vec![String::from("f")]), "foo", "far"))),
+    }
+}
