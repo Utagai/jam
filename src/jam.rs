@@ -40,7 +40,6 @@ pub struct Jam<'a> {
     chords: ChordTrie,
 }
 
-// TODO: Why is Chord a Vec<String> and not Vec<u32> or whatever a char is?!?!?
 #[derive(Eq, Debug)]
 pub struct Chord(pub Vec<String>);
 
@@ -49,7 +48,7 @@ impl Chord {
         Chord(shortname.split('-').map(String::from).collect())
     }
 
-    // TODO: This is not very efficient. It basically clones the chord
+    // NOTE: This is not very efficient. It basically clones the chord
     // then appends a note.  A more efficient approach is to implement
     // ChordView or ChordChain or idek, but something that just takes
     // a &Chord and &String and pretends like its the concatenation of
@@ -93,17 +92,11 @@ impl<'a> Jam<'a> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
-        // TODO: We should flip it so that the Trie stores the Target,
-        // and the Dag stores the target chord to index into the trie.
-        // This would be more efficient and we won't need the helpers
-        // we currently have for finding a Target given a target_name.
         let mut trie: ChordTrie = Trie::new();
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
         for target_cfg in &cfg.targets {
-            // TODO: Maybe move the loop body into a function.
-            // The while loop condition guarantees this.
             Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
             let target = Target::from(target_cfg);
@@ -162,7 +155,7 @@ impl<'a> Jam<'a> {
         }
 
         Ok(Jam {
-            // TODO: If we ever end up having a distinction between
+            // NOTE: If we ever end up having a distinction between
             // config-time options vs. run-time options, we may want
             // to create a separate type here for isolation.
             opts: &cfg.options,
@@ -176,17 +169,9 @@ impl<'a> Jam<'a> {
         cfg: &DesugaredTargetCfg,
         node_idxes: &HashMap<&str, NodeIdx>,
     ) -> Result<()> {
-        // TODO: This should be validating short names too.
         if cfg.name.is_empty() {
             bail!("cannot have an empty target name")
         } else if cfg.name.contains('.') {
-            // TODO: Other things to validate? e.g. space?
-            // TODO: This and its sibling, '?', should have
-            // its checks changed to be more permissive --
-            // they're only not allowed _after_ a delimiter,
-            // as that's when they cause ambiguity. Anywhere
-            // else is actually fine. e.g. foo.bar-baz is
-            // actually fine!
             bail!("cannot have a '.' in a target name: '{}'", cfg.name)
         } else if cfg.name.contains('?') {
             bail!("cannot have a '?' in a target name: '{}'", cfg.name)
@@ -199,7 +184,6 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    // TODO: Should these functions be replaced with an Error enum?
     fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
         anyhow!("reference to nonexistent dep: {}", dep_name)
     }
@@ -246,14 +230,11 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    // TODO: I think rename play, chord, notes, etc terminology?
-    // Namely, I think a chord is for _simultaneous_ notes, not in sequence.
-    // That is a chord _progression_... and that doesn't ring off the tongue very well, now does it?
     pub fn play(&self, chord: Chord) -> Result<()> {
         let nidxes = self
             .chords
             .get(&chord)
-            .ok_or(Jam::no_cmd_for_chord(&chord))?; // TODO: We can do better with the error message here.
+            .ok_or(Jam::no_cmd_for_chord(&chord))?;
         if nidxes.len() > 1 {
             return Err(self.ambiguous_chord(&chord, nidxes));
         }
@@ -337,10 +318,6 @@ mod tests {
             }
         }
 
-        // TODO: We can go a step further and actually construct the
-        // Jam instance here ourselves based on targets + deps, but it
-        // would require more complex logic to derive a DAG from the
-        // two arguments and could be error prone... maybe later.
         fn verify_jam_dag(jam: Jam, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
             for target in targets {
                 assert!(jam.has_target(target));
@@ -402,7 +379,6 @@ mod tests {
                 let subcfg =
                     Config::with_targets(vec![target::sub("foo", vec![target::lone("bar")])]);
                 let subjam = get_jam(&subcfg);
-                // TODO: With the fixes to how we rename subtargets, this method of asserting is no longer correct.
                 verify_jam_dag(depjam, &vec!["foo", "bar"], &vec![("foo", "bar")]);
                 verify_jam_dag(subjam, &vec!["foo", "foo-bar"], &vec![("foo", "foo-bar")]);
             }

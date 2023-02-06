@@ -30,18 +30,11 @@ impl fmt::Display for ExecuteKind {
 type ExecutableMapping = HashMap<ExecuteKind, Box<dyn Executable>>;
 
 pub struct Executor {
-    // TODO: Right now, we initialize this once and only once at
-    // startup. Perhaps this means we can have &'static Executable? I
-    // don't know if rustc can do that.
     executables: ExecutableMapping,
 }
 
 impl Executor {
     pub fn new() -> Executor {
-        // TODO: This initialization is more expensive than
-        // necessary. For example, if the entire config only ever uses
-        // a single kind of executable, then we'll construct a bunch
-        // of executables we won't ever use.
         let mut mapping: ExecutableMapping = HashMap::new();
         mapping.insert(ExecuteKind::DryRun, Box::new(DryRunner::new()));
         mapping.insert(ExecuteKind::Shell, Box::new(Shell::new()));
@@ -67,9 +60,6 @@ impl Executor {
 }
 
 pub trait Executable {
-    // TODO: It is not clear to me if Result<u32> is the right return
-    // value. Namely, is u32 sufficient for all possible
-    // implementations of Executor?
     /// Execute executes the command given and returns a Result<u32>
     /// indicating the commands exit status.
     fn execute(&self, cmd: &str) -> Result<bool>;
@@ -119,7 +109,6 @@ impl Executable for Shell {
     }
 }
 
-// TODO: This should be moved to a mod tests.
 pub struct Mock {}
 
 impl Mock {

@@ -18,9 +18,6 @@ type Reconciler = fn(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Resu
 
 fn first_nonmatch_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
     let len_diff = a.len().abs_diff(b.len());
-    // TODO: This shouldn't be hardcoded or assumed. We should have
-    // some kind of listing of disallowed characters somewhere and we
-    // just take the first element from there.
     let a_iter = a
         .chars()
         .chain(std::iter::repeat('.'))
@@ -102,6 +99,8 @@ mod tests {
     }
 
     #[rstest]
+    // TODO: Would be nice if we could avoid repeating the values in the expected rerr somehow.
+    // Maybe with another macro, or a check_err() function?
     #[case::fooey(chord!["f"], "foo", "far", rerr(chord!["f"], "foo", "far"))]
     fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
         let trie = Trie::new();

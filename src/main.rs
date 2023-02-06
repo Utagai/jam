@@ -12,19 +12,11 @@ mod executor;
 mod jam;
 mod reconciler;
 
-// TODO: This clap help text is using unicode characters. Is there a
-// way to programmatically determine if the host terminal supports
-// them? If so, we should be able to detect that and then branch off
-// to a different, non-unicode variant. Either through a parallel
-// struct or maybe some method of overriding the help function via
-// some setting in clap.
-
 /// J̲am (isn't) A̲nother M̲ake.
 /// A task runner.
 #[derive(Parser, Debug)]
 struct Cli {
     /// Show what jam _would_ do, but don't actually do it.
-    /// TODO: This isn't actually honored or implemented.
     #[clap(short, long, value_parser, default_value_t = false)]
     dry_run: bool,
 

@@ -15,16 +15,7 @@ use crate::{executor::ExecuteKind, reconciler};
 ///  prefixed).
 /// * Subtarget sections are flattened (post-prefixing) into deps.
 /// * Removing Option types and replacing them with guaranteed values
-///  when possible. TODO: There are probably cases where we should use
-///  serde(default) instead.
-/// TODO: The process of desugaring effectively copies a lot of
-/// TargetCfg into DesugaredTargetCfg. This could be inefficient, but
-/// I don't know yet and don't intend to do anything that could be
-/// considered premature optimization. At some point though, I think a
-/// simple benchmark off of a gigantic (randomly generated) YAML would
-/// be a good idea. If it ends up being particularly slow, we can
-/// change to mutating TargetCfg in-place and letting the parsing
-/// logic complexity increase.
+///  when possible.
 #[derive(Debug, PartialEq)]
 pub struct DesugaredTargetCfg {
     pub name: String,
@@ -35,7 +26,6 @@ pub struct DesugaredTargetCfg {
     pub execute_kind: ExecuteKind,
 }
 
-// TODO: Exercise - can we use &str in any of these fields?
 #[derive(Debug, Deserialize)]
 pub struct TargetCfg {
     pub name: String,
@@ -128,7 +118,6 @@ impl Config {
             // right now.
             return String::from("");
         }
-        // TODO: Eventually, this delimiter should be configured.
         name.as_ref()
             .split('-')
             .map(|segment| segment.chars().next().unwrap().to_string())
