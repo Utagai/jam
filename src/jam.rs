@@ -31,11 +31,12 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 
 type IdxT = u32;
 type NodeIdx = NodeIndex<IdxT>;
+pub type ChordTrie = Trie<Chord, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
     executor: Executor,
     dag: Dag<Target<'a>, IdxT>,
-    chords: Trie<Chord, Vec<NodeIdx>>,
+    chords: ChordTrie,
 }
 
 #[derive(Eq)]
@@ -83,7 +84,7 @@ impl<'a> Jam<'a> {
         // and the Dag stores the target chord to index into the trie.
         // This would be more efficient and we won't need the helpers
         // we currently have for finding a Target given a target_name.
-        let mut trie: Trie<Chord, Vec<NodeIdx>> = Trie::new();
+        let mut trie: ChordTrie = Trie::new();
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.

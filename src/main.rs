@@ -10,6 +10,7 @@ use crate::executor::Executor;
 mod config;
 mod executor;
 mod jam;
+mod reconciler;
 
 // TODO: This clap help text is using unicode characters. Is there a
 // way to programmatically determine if the host terminal supports
