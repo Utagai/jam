@@ -40,12 +40,24 @@ pub struct Jam<'a> {
     chords: ChordTrie,
 }
 
-#[derive(Eq)]
+// TODO: Why is Chord a Vec<String> and not Vec<u32> or whatever a char is?!?!?
+#[derive(Eq, Debug)]
 pub struct Chord(pub Vec<String>);
 
 impl Chord {
     fn from_shortname(shortname: &str) -> Chord {
         Chord(shortname.split('-').map(String::from).collect())
+    }
+
+    // TODO: This is not very efficient. It basically clones the chord
+    // then appends a note.  A more efficient approach is to implement
+    // ChordView or ChordChain or idek, but something that just takes
+    // a &Chord and &String and pretends like its the concatenation of
+    // the two without actually doing the concatenation.
+    pub fn append(&self, note: &char) -> Chord {
+        let mut new_vec = self.0.clone();
+        new_vec.push(note.to_string());
+        Chord(new_vec)
     }
 }
 
@@ -168,6 +180,7 @@ impl<'a> Jam<'a> {
         if cfg.name.is_empty() {
             bail!("cannot have an empty target name")
         } else if cfg.name.contains('.') {
+            // TODO: Other things to validate? e.g. space?
             // TODO: This and its sibling, '?', should have
             // its checks changed to be more permissive --
             // they're only not allowed _after_ a delimiter,
