@@ -5,7 +5,7 @@ use daggy::{Dag, NodeIndex, Walker};
 use radix_trie::{Trie, TrieKey};
 
 use crate::{
-    config::{DesugaredConfig, DesugaredTargetCfg},
+    config::{DesugaredConfig, DesugaredTargetCfg, Options},
     executor::{ExecuteKind, Executor},
 };
 
@@ -34,6 +34,7 @@ type NodeIdx = NodeIndex<IdxT>;
 pub type ChordTrie = Trie<Chord, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
+    opts: &'a Options,
     executor: Executor,
     dag: Dag<Target<'a>, IdxT>,
     chords: ChordTrie,
@@ -149,6 +150,10 @@ impl<'a> Jam<'a> {
         }
 
         Ok(Jam {
+            // TODO: If we ever end up having a distinction between
+            // config-time options vs. run-time options, we may want
+            // to create a separate type here for isolation.
+            opts: &cfg.options,
             executor,
             dag,
             chords: trie,
@@ -306,7 +311,9 @@ mod tests {
 
         fn check_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
             let cfg = Config {
-                options: Options {},
+                options: Options {
+                    reconciliation_strategy: crate::reconciler::Strategy::Error,
+                },
                 targets,
             }
             .desugar();

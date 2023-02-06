@@ -1,9 +1,12 @@
 ---
 targets:
   - name: "foo"
-    chord: "f"
     cmd: "echo 'foo'"
     execute_kind: "dryrun"
+  - name: "alpha"
+    cmd: "echo 'foo'"
+  - name: "ambiguous"
+    cmd: "echo 'foo'"
   - name: "bar"
     cmd: "echo 'bar'"
     targets:

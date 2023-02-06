@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::executor::ExecuteKind;
+use crate::{executor::ExecuteKind, reconciler};
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
 /// re-written and simplified so that the parsing logic can be
@@ -15,7 +15,8 @@ use crate::executor::ExecuteKind;
 ///  prefixed).
 /// * Subtarget sections are flattened (post-prefixing) into deps.
 /// * Removing Option types and replacing them with guaranteed values
-///  when possible.
+///  when possible. TODO: There are probably cases where we should use
+///  serde(default) instead.
 /// TODO: The process of desugaring effectively copies a lot of
 /// TargetCfg into DesugaredTargetCfg. This could be inefficient, but
 /// I don't know yet and don't intend to do anything that could be
@@ -48,7 +49,10 @@ pub struct TargetCfg {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub struct Options {}
+pub struct Options {
+    #[serde(default = "reconciler::Strategy::default")]
+    pub reconciliation_strategy: reconciler::Strategy,
+}
 
 // NOTE: 'Desugaring' may not exactly be the right terminology here.
 // But the overall idea is we are rewriting the config in a simpler
@@ -70,7 +74,7 @@ pub struct Config {
 impl Config {
     pub fn desugar(self) -> DesugaredConfig {
         DesugaredConfig {
-            options: Options {},
+            options: self.options,
             targets: self
                 .targets
                 .into_iter()
@@ -178,7 +182,9 @@ pub mod target {
 impl Config {
     pub fn with_targets(targets: Vec<TargetCfg>) -> DesugaredConfig {
         Config {
-            options: Options {},
+            options: Options {
+                reconciliation_strategy: reconciler::Strategy::Error,
+            },
             targets,
         }
         .desugar()
@@ -219,7 +225,9 @@ mod tests {
     impl DesugaredConfig {
         pub fn with_targets(targets: Vec<DesugaredTargetCfg>) -> DesugaredConfig {
             DesugaredConfig {
-                options: Options {},
+                options: Options {
+                    reconciliation_strategy: reconciler::Strategy::Error,
+                },
                 targets,
             }
         }
