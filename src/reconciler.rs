@@ -14,9 +14,9 @@ fn reconciliation_err(c: Chord, a: &str, b: &str) -> anyhow::Error {
     )
 }
 
-type Reconciler = fn(chords: &ChordTrie, a: &str, ac: Chord, b: &str, bc: Chord) -> Result;
+type Reconciler = fn(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result;
 
-fn first_nonmatch_reconciler(chords: &ChordTrie, a: &str, ac: Chord, b: &str, bc: Chord) -> Result {
+fn first_nonmatch_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
     let len_diff = a.len().abs_diff(b.len());
     // TODO: This shouldn't be hardcoded or assumed. We should have
     // some kind of listing of disallowed characters somewhere and we
@@ -33,13 +33,13 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, a: &str, ac: Chord, b: &str, bc
         .zip(b_iter)
         .filter_map(|(ach, bch)| {
             if ach != bch {
-                Some((ac.append(&ach), bc.append(&bch)))
+                Some((chord.append(&ach), chord.append(&bch)))
             } else {
                 None
             }
         })
         .find(|(new_ac, new_bc)| chords.get(new_ac).is_none() && chords.get(new_bc).is_none())
-        .ok_or(reconciliation_err(ac, a, b))
+        .ok_or(reconciliation_err(chord, a, b))
 }
 
 /// The simple reconciler attempts to reconcile a chord ambiguity by
@@ -47,8 +47,8 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, a: &str, ac: Chord, b: &str, bc
 /// targets that avoids any ambiguity.
 pub static first_nonmatch: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(chords: &ChordTrie, a: &str, ac: Chord, b: &str, bc: Chord) -> Result {
-    Err(reconciliation_err(ac, a, b))
+fn error_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
+    Err(reconciliation_err(chord, a, b))
 }
 
 // NOTE: We have to name this err because otherwise it conflicts with
@@ -68,28 +68,27 @@ impl Default for Strategy {
     }
 }
 
-pub fn reconcile(
-    kind: Strategy,
-    chords: &ChordTrie,
-    a: &str,
-    ac: Chord,
-    b: &str,
-    bc: Chord,
-) -> Result {
+pub fn reconcile(kind: Strategy, chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
     let reconciler: Reconciler = match kind {
         Strategy::Error => err_reconciler,
         Strategy::FirstNonMatch => first_nonmatch,
     };
 
-    reconciler(chords, a, ac, b, bc)
+    reconciler(chords, chord, a, b)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn check(trie: ChordTrie, a: &str, ac: Chord, b: &str, bc: Chord, expected: Result) {
-        let res = first_nonmatch(&trie, a, ac, b, bc);
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::fooey(Chord(vec![String::from("f")]), "foo", "far", Err(reconciliation_err(Chord(vec![String::from("f")]), "foo", "far")))]
+    fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
+        let trie = Trie::new();
+        let res = first_nonmatch(&trie, chord, a, b);
         match expected {
             Ok(chords) => assert_eq!(chords, res.expect("expected no error")),
             Err(err) => assert_eq!(
@@ -97,21 +96,5 @@ mod tests {
                 format!("{:#?}", res.expect_err("expected an error"))
             ),
         }
-    }
-
-    macro_rules! reconciliation_tests {
-    ($($name:ident: $value:expr,)*) => {
-    $(
-        #[test]
-        fn $name() {
-            let (trie, a, ac, b, bc, expected) = $value;
-						check(trie, a, ac, b, bc, expected);
-        }
-    )*
-    }
-}
-
-    reconciliation_tests! {
-            blah: (Trie::new(), "foo", Chord(vec![String::from("f")]), "far", Chord(vec![String::from("f")]), Err(reconciliation_err(Chord(vec![String::from("f")]), "foo", "far"))),
     }
 }
