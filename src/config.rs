@@ -8,7 +8,7 @@ use crate::{executor::ExecuteKind, reconciler};
 /// desugaring some of the things implicitly encoded in it makes our
 /// job significantly easier.
 /// In particular, desugaring leads to doing the following things:
-/// * Autogenerating chords if not specified. This does not care
+/// * Autogenerating shortcuts if not specified. This does not care
 ///  about conflicts.
 /// * Changing names of subtargets to be prefixed by their parent's
 ///  names. This is done recursively (e.g. the parent itself may be
@@ -19,7 +19,7 @@ use crate::{executor::ExecuteKind, reconciler};
 #[derive(Debug, PartialEq)]
 pub struct DesugaredTargetCfg {
     pub name: String,
-    pub chord_str: String,
+    pub shortcut_str: String,
     pub help: String,
     pub cmd: Option<String>,
     pub deps: Vec<String>,
@@ -29,8 +29,8 @@ pub struct DesugaredTargetCfg {
 #[derive(Debug, Deserialize)]
 pub struct TargetCfg {
     pub name: String,
-    #[serde(rename = "chord")]
-    pub chord_str: Option<String>,
+    #[serde(rename = "shortcut")]
+    pub shortcut_str: Option<String>,
     pub help: Option<String>,
     pub cmd: Option<String>,
     pub targets: Option<Vec<TargetCfg>>,
@@ -82,10 +82,10 @@ impl Config {
         } else {
             sugar.name
         };
-        let chord_str = Self::name_to_short(&realized_name);
+        let shortcut_str = Self::name_to_short(&realized_name);
         let desugared = DesugaredTargetCfg {
             name: realized_name.clone(),
-            chord_str: sugar.chord_str.unwrap_or(chord_str),
+            shortcut_str: sugar.shortcut_str.unwrap_or(shortcut_str),
             help: sugar.help.unwrap_or("no help provided".to_string()),
             cmd: sugar.cmd,
             deps: sugar.deps.unwrap_or(vec![]),
@@ -133,7 +133,7 @@ pub mod target {
     pub fn lone(name: &str) -> TargetCfg {
         TargetCfg {
             name: String::from(name),
-            chord_str: None,
+            shortcut_str: None,
             help: None,
             cmd: Some(String::from("blah")),
             targets: None,
@@ -145,7 +145,7 @@ pub mod target {
     pub fn dep(name: &str, deps: Vec<&str>) -> TargetCfg {
         TargetCfg {
             name: String::from(name),
-            chord_str: None,
+            shortcut_str: None,
             help: None,
             cmd: None,
             targets: None,
@@ -157,7 +157,7 @@ pub mod target {
     pub fn sub(name: &str, subs: Vec<TargetCfg>) -> TargetCfg {
         TargetCfg {
             name: String::from(name),
-            chord_str: None,
+            shortcut_str: None,
             help: None,
             cmd: None,
             targets: Some(subs),
@@ -188,10 +188,10 @@ mod tests {
     mod dstarget {
         use super::*;
 
-        pub fn lone(name: &str, chord_str: &str) -> DesugaredTargetCfg {
+        pub fn lone(name: &str, shortcut_str: &str) -> DesugaredTargetCfg {
             DesugaredTargetCfg {
                 name: String::from(name),
-                chord_str: String::from(chord_str),
+                shortcut_str: String::from(shortcut_str),
                 help: String::from("no help provided"),
                 cmd: Some(String::from("blah")),
                 deps: vec![],
@@ -199,10 +199,10 @@ mod tests {
             }
         }
 
-        pub fn dep(name: &str, chord_str: &str, deps: Vec<&str>) -> DesugaredTargetCfg {
+        pub fn dep(name: &str, shortcut_str: &str, deps: Vec<&str>) -> DesugaredTargetCfg {
             DesugaredTargetCfg {
                 name: String::from(name),
-                chord_str: String::from(chord_str),
+                shortcut_str: String::from(shortcut_str),
                 help: String::from("no help provided"),
                 cmd: None,
                 deps: deps.iter().map(|s| s.to_string()).collect(),
@@ -302,7 +302,7 @@ mod tests {
         )
     }
 
-    mod chords {
+    mod shortcuts {
         use super::*;
         use pretty_assertions::assert_eq;
 
@@ -373,7 +373,7 @@ mod tests {
         fn override_respected() {
             let cfg = Config::with_targets(vec![TargetCfg {
                 name: String::from("foo"),
-                chord_str: Some(String::from("x")),
+                shortcut_str: Some(String::from("x")),
                 help: None,
                 cmd: Some(String::from("blah")),
                 targets: None,

@@ -3,7 +3,7 @@ use std::fs::File;
 use clap::Parser;
 
 use config::Config;
-use jam::{Chord, Jam};
+use jam::{Jam, Shortcut};
 
 use crate::executor::Executor;
 
@@ -20,8 +20,8 @@ struct Cli {
     #[clap(short, long, value_parser, default_value_t = false)]
     dry_run: bool,
 
-    /// Individual identifiers that together give a chord, uniquely identifying a jam command to execute.
-    chord: Vec<char>,
+    /// Individual keys that together give a shortcut, uniquely identifying a jam command to execute.
+    shortcut: Vec<char>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -35,5 +35,5 @@ fn main() -> anyhow::Result<()> {
 
     let jam = Jam::new(executor, &desugared_cfg)?;
 
-    jam.play(Chord(cli.chord))
+    jam.execute(Shortcut(cli.shortcut))
 }

@@ -11,7 +11,7 @@ use crate::{
 
 struct Target<'a> {
     name: &'a str,
-    chord: Chord,
+    shortcut: Shortcut,
     help: &'a str,
     cmd: Option<&'a str>,
     execute_kind: ExecuteKind,
@@ -21,7 +21,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
     fn from(cfg: &'a DesugaredTargetCfg) -> Self {
         return Target {
             name: &cfg.name,
-            chord: Chord::from_shortname(&cfg.chord_str),
+            shortcut: Shortcut::from_shortcut_str(&cfg.shortcut_str),
             help: &cfg.help,
             cmd: cfg.cmd.as_deref(),
             execute_kind: cfg.execute_kind,
@@ -31,22 +31,22 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 
 type IdxT = u32;
 type NodeIdx = NodeIndex<IdxT>;
-pub type ChordTrie = Trie<Chord, Vec<NodeIdx>>;
+pub type ShortcutTrie = Trie<Shortcut, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
     opts: &'a Options,
     executor: Executor,
     dag: Dag<Target<'a>, IdxT>,
-    chords: ChordTrie,
+    shortcuts: ShortcutTrie,
 }
 
 #[derive(Eq, Debug)]
-pub struct Chord(pub Vec<char>);
+pub struct Shortcut(pub Vec<char>);
 
-impl Chord {
-    fn from_shortname(chord_str: &str) -> Chord {
-        Chord(
-            chord_str
+impl Shortcut {
+    fn from_shortcut_str(shortcut_str: &str) -> Shortcut {
+        Shortcut(
+            shortcut_str
                 .split('-')
                 // TODO: This requires validation...
                 .map(|s| s.chars().nth(0).unwrap())
@@ -54,19 +54,19 @@ impl Chord {
         )
     }
 
-    // NOTE: This is not very efficient. It basically clones the chord
-    // then appends a note.  A more efficient approach is to implement
-    // ChordView or ChordChain or idek, but something that just takes
-    // a &Chord and &String and pretends like its the concatenation of
+    // NOTE: This is not very efficient. It basically clones the shortcut
+    // then appends a key.  A more efficient approach is to implement
+    // ShortcutView or ShortcutChain or idek, but something that just takes
+    // a &Shortcut and &String and pretends like its the concatenation of
     // the two without actually doing the concatenation.
-    pub fn append(&self, note: &char) -> Chord {
+    pub fn append(&self, key: &char) -> Shortcut {
         let mut new_vec = self.0.clone();
-        new_vec.push(*note);
-        Chord(new_vec)
+        new_vec.push(*key);
+        Shortcut(new_vec)
     }
 }
 
-impl PartialEq for Chord {
+impl PartialEq for Shortcut {
     fn eq(&self, other: &Self) -> bool {
         self.0
             .iter()
@@ -75,19 +75,19 @@ impl PartialEq for Chord {
     }
 }
 
-impl std::fmt::Display for Chord {
+impl std::fmt::Display for Shortcut {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.iter().collect::<String>())
     }
 }
 
-impl Clone for Chord {
+impl Clone for Shortcut {
     fn clone(&self) -> Self {
-        Chord(self.0.to_vec())
+        Shortcut(self.0.to_vec())
     }
 }
 
-impl TrieKey for Chord {
+impl TrieKey for Shortcut {
     fn encode_bytes(&self) -> Vec<u8> {
         self.0
             .iter()
@@ -105,7 +105,7 @@ impl<'a> Jam<'a> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
-        let mut trie: ChordTrie = Trie::new();
+        let mut trie: ShortcutTrie = Trie::new();
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
@@ -113,7 +113,7 @@ impl<'a> Jam<'a> {
             Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
             let target = Target::from(target_cfg);
-            let target_chord = target.chord.clone();
+            let target_shortcut = target.shortcut.clone();
 
             // Keep track of the dep links. Once all the targets have
             // been visited, we can then wire up their edges in the
@@ -127,10 +127,10 @@ impl<'a> Jam<'a> {
             // Add this target as a node to the DAG.
             let node_idx = dag.add_node(target);
 
-            // And add it to the trie under its chord.
+            // And add it to the trie under its shortcut.
             // A natural question to ask here is about conflicts
-            // of chords. For example, if two targets both have
-            // the chord `t-a`, how can we disambiguate them? The
+            // of shortcuts. For example, if two targets both have
+            // the shortcut `t-a`, how can we disambiguate them? The
             // approach we take here is actually laziness. The
             // trie actually maps `t-a` to _two_ different targets
             // in this case, and the idea is that at 'runtime',
@@ -141,9 +141,13 @@ impl<'a> Jam<'a> {
             // actually going to be more efficient, because doing
             // the reconciliation here pays the cost on _every_
             // jam startup, but the lazy approach only does it if
-            // the user is going to use an ambiguous chord, which
+            // the user is going to use an ambiguous shortcut, which
             // may only be for very rare targets!
-            trie.map_with_default(target_chord, |idxes| idxes.push(node_idx), vec![node_idx]);
+            trie.map_with_default(
+                target_shortcut,
+                |idxes| idxes.push(node_idx),
+                vec![node_idx],
+            );
 
             // And at last, record the mapping of target name to
             // its node index.
@@ -174,7 +178,7 @@ impl<'a> Jam<'a> {
             opts: &cfg.options,
             executor,
             dag,
-            chords: trie,
+            shortcuts: trie,
         })
     }
 
@@ -201,14 +205,14 @@ impl<'a> Jam<'a> {
         anyhow!("reference to nonexistent dep: {}", dep_name)
     }
 
-    fn no_cmd_for_chord(chord: &Chord) -> anyhow::Error {
-        anyhow!("no command for given chord: '{}'", chord)
+    fn no_cmd_for_shortcut(shortcut: &Shortcut) -> anyhow::Error {
+        anyhow!("no command for given shortcut: '{}'", shortcut)
     }
 
-    fn ambiguous_chord(&self, chord: &Chord, nidxes: &[NodeIdx]) -> anyhow::Error {
+    fn ambiguous_shortcut(&self, shortcut: &Shortcut, nidxes: &[NodeIdx]) -> anyhow::Error {
         anyhow!(
-            "given chord '{}' is ambiguous (i.e. is it {}?)",
-            chord,
+            "given shortcut '{}' is ambiguous (i.e. is it {}?)",
+            shortcut,
             nidxes
                 .iter()
                 .map(|nidx| format!("'{}'", self.dag[*nidx].name))
@@ -243,18 +247,18 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    pub fn play(&self, chord: Chord) -> Result<()> {
+    pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
         let nidxes = self
-            .chords
-            .get(&chord)
-            .ok_or(Jam::no_cmd_for_chord(&chord))?;
+            .shortcuts
+            .get(&shortcut)
+            .ok_or(Jam::no_cmd_for_shortcut(&shortcut))?;
         if nidxes.len() > 1 {
-            return Err(self.ambiguous_chord(&chord, nidxes));
+            return Err(self.ambiguous_shortcut(&shortcut, nidxes));
         }
         if let Some(nidx) = nidxes.first() {
             self.execute_target(*nidx)
         } else {
-            bail!(Jam::no_cmd_for_chord(&chord))
+            bail!(Jam::no_cmd_for_shortcut(&shortcut))
         }
     }
 }
@@ -274,22 +278,22 @@ mod tests {
 
         impl<'a> Jam<'a> {
             fn node_has_target(&self, target_name: &str) -> Option<NodeIdx> {
-                self.chords
+                self.shortcuts
                     .iter()
                     .flat_map(|kv| kv.1.clone())
                     .find(|nidx| self.dag[*nidx].name == target_name)
             }
 
             fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
-                self.chords
+                self.shortcuts
                     .iter()
                     .flat_map(|kv| kv.1.clone())
                     .map(|nidx| &self.dag[nidx])
                     .find(|target| target.name == target_name)
             }
 
-            fn get_targets_by_chord(&self, chord: Chord) -> Option<&Vec<NodeIdx>> {
-                self.chords.get(&chord)
+            fn get_targets_by_shortcut(&self, shortcut: Shortcut) -> Option<&Vec<NodeIdx>> {
+                self.shortcuts.get(&shortcut)
             }
 
             fn has_target(&self, target_name: &str) -> bool {
@@ -525,7 +529,7 @@ mod tests {
                 check_jam_err(
                         vec![TargetCfg {
                             name: String::from("foo"),
-                            chord_str: None,
+                            shortcut_str: None,
                             help: None,
                             cmd: None,
                             targets: None,

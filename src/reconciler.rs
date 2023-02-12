@@ -4,21 +4,26 @@ use anyhow::{anyhow, bail};
 use radix_trie::Trie;
 use serde::Deserialize;
 
-use crate::jam::{Chord, ChordTrie};
+use crate::jam::{Shortcut, ShortcutTrie};
 
 type Result = anyhow::Result<Vec<char>>;
 
-fn reconciliation_err(conflicts: &Vec<&str>, chord: &Chord) -> anyhow::Error {
+fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Error {
     anyhow!(
-        "reconciliation failed for chord '{}'; still ambiguous (e.g. is it {}?)",
-        chord,
+        "reconciliation failed for shortcut '{}'; still ambiguous (e.g. is it {}?)",
+        shortuct,
         conflicts.join(" or ")
     )
 }
 
-type Reconciler = fn(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result;
+type Reconciler =
+    fn(shortcuts: &ShortcutTrie, conflicts: &Vec<&str>, shortcut: &Shortcut) -> Result;
 
-fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result {
+fn first_nonmatch_reconciler(
+    shortcuts: &ShortcutTrie,
+    conflicts: &Vec<&str>,
+    shortcut: &Shortcut,
+) -> Result {
     // We now have an iterator in which every element is itself an
     // iterator over one conflicting target name. So, each of these iterators return one character each.
 
@@ -53,9 +58,9 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
                         println!("o no it contains :(");
                         still_conflict = true;
                     } else {
-                        let new_chord = chord.append(&ch);
-                        if chords.get(&new_chord).is_some() {
-                            // This chord extension may avoid conflicts here, but not elsewhere.
+                        let new_shortcut = shortcut.append(&ch);
+                        if shortcuts.get(&new_shortcut).is_some() {
+                            // This shortcut extension may avoid conflicts here, but not elsewhere.
                             still_conflict = true;
                         }
                         // If we get here though, we have a potential solution.
@@ -63,7 +68,7 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
                         reconciliation.push(ch);
                     }
                 }
-                None => return Err(reconciliation_err(conflicts, chord)), // One or more of these targets ran out of characters. We're done for.
+                None => return Err(reconciliation_err(conflicts, shortcut)), // One or more of these targets ran out of characters. We're done for.
             }
         }
         // If we make it through the loop, we should have a solution
@@ -83,13 +88,17 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
     // captured here anyways for robustness.
 }
 
-/// The simple reconciler attempts to reconcile a chord ambiguity by
+/// The simple reconciler attempts to reconcile a shortcut ambiguity by
 /// finding the first non-matching character of the conflicting
 /// targets that avoids any ambiguity.
 pub static first_nonmatch: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result {
-    Err(reconciliation_err(conflicts, chord))
+fn error_reconciler(
+    shortcuts: &ShortcutTrie,
+    conflicts: &Vec<&str>,
+    shortcut: &Shortcut,
+) -> Result {
+    Err(reconciliation_err(conflicts, shortcut))
 }
 
 // NOTE: We have to name this err because otherwise it conflicts with
@@ -111,16 +120,16 @@ impl Default for Strategy {
 
 pub fn reconcile(
     kind: Strategy,
-    chords: &ChordTrie,
+    shortcuts: &ShortcutTrie,
     conflicts: &Vec<&str>,
-    chord: &Chord,
+    shortcut: &Shortcut,
 ) -> Result {
     let reconciler: Reconciler = match kind {
         Strategy::Error => err_reconciler,
         Strategy::FirstNonMatch => first_nonmatch,
     };
 
-    reconciler(chords, conflicts, chord)
+    reconciler(shortcuts, conflicts, shortcut)
 }
 
 #[cfg(test)]
@@ -130,35 +139,35 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    macro_rules! chord {
+    macro_rules! shortcut {
 		    ( $( $x:expr ),* ) => {
 		        {
 		            let mut temp_vec = Vec::new();
 		            $(
 		                temp_vec.push($x);
 		            )*
-		            Chord(temp_vec)
+		            Shortcut(temp_vec)
 		        }
 		    };
 		}
 
     // Shorthand for Err(reconciliation_err()).
-    fn rerr(conflicts: &Vec<&str>, chord: &Chord) -> Result {
-        Err(reconciliation_err(conflicts, chord))
+    fn rerr(conflicts: &Vec<&str>, shortcut: &Shortcut) -> Result {
+        Err(reconciliation_err(conflicts, shortcut))
     }
 
     #[rstest]
-    #[case::simple(chord!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
-    #[case::simple_overriden(chord!['z'], vec!["foo", "bar"], Ok(vec!['f', 'b']))]
-    #[case::simple_overriden_initially_same(chord!['z'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
-    #[case::almost_same(chord!['f'], vec!["lalalah", "lalalaz"], Ok(vec!['h', 'z']))]
-    #[case::three_way_conflict(chord!['f'], vec!["foo", "faz", "fiz"], Ok(vec!['o', 'a', 'i']))]
-    #[case::three_way_conflict_almost_same(chord!['f'], vec!["lalalah", "lalalaz", "lalalab"], Ok(vec!['h', 'z', 'b']))]
-    #[case::many_conflicts_keep_almost_reconciling(chord!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
-    #[case::unequal_length_conflicts_reconcile_in_time(chord!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
-    fn check(#[case] chord: Chord, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
+    #[case::simple(shortcut!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::simple_overriden(shortcut!['z'], vec!["foo", "bar"], Ok(vec!['f', 'b']))]
+    #[case::simple_overriden_initially_same(shortcut!['z'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::almost_same(shortcut!['f'], vec!["lalalah", "lalalaz"], Ok(vec!['h', 'z']))]
+    #[case::three_way_conflict(shortcut!['f'], vec!["foo", "faz", "fiz"], Ok(vec!['o', 'a', 'i']))]
+    #[case::three_way_conflict_almost_same(shortcut!['f'], vec!["lalalah", "lalalaz", "lalalab"], Ok(vec!['h', 'z', 'b']))]
+    #[case::many_conflicts_keep_almost_reconciling(shortcut!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
+    #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
+    fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, &conflicts, &chord);
+        let res = first_nonmatch(&trie, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
             res.expect("expected no error, but got one")
@@ -166,16 +175,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::same_target_names(chord!['f'], vec!["foo", "foo"])]
-    #[case::one_is_complete_prefix(chord!['f'], vec!["foo", "fool"])]
-    #[case::multiple_same_target_names(chord!['f'], vec!["foo", "foo", "foo", "foo"])]
-    #[case::multiple_one_is_complete_prefix(chord!['f'], vec!["foo", "fool", "baz", "quux"])]
-    #[case::multiple_all_but_one_is_complete_prefix(chord!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
-    fn check_err(#[case] chord: Chord, #[case] conflicts: Vec<&str>) {
+    #[case::same_target_names(shortcut!['f'], vec!["foo", "foo"])]
+    #[case::one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool"])]
+    #[case::multiple_same_target_names(shortcut!['f'], vec!["foo", "foo", "foo", "foo"])]
+    #[case::multiple_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "baz", "quux"])]
+    #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
+    fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, &conflicts, &chord);
+        let res = first_nonmatch(&trie, &conflicts, &shortcut);
         assert_eq!(
-            format!("{:#?}", rerr(&conflicts, &chord).unwrap_err()),
+            format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),
             format!(
                 "{:#?}",
                 res.expect_err("expected an error, but didn't get one")
