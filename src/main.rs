@@ -21,7 +21,7 @@ struct Cli {
     dry_run: bool,
 
     /// Individual identifiers that together give a chord, uniquely identifying a jam command to execute.
-    chord: Vec<String>,
+    chord: Vec<char>,
 }
 
 fn main() -> anyhow::Result<()> {

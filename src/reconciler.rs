@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::jam::{Chord, ChordTrie};
 
-type Result = anyhow::Result<Vec<String>>;
+type Result = anyhow::Result<Vec<char>>;
 
 fn reconciliation_err(conflicts: Vec<&str>, c: Chord) -> anyhow::Error {
     anyhow!(
@@ -57,7 +57,7 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: Ch
             }
         }
         // If we make it through the loop, we should have a solution. Let's return it.
-        return Ok(reconciliation.iter().map(|ch| ch.to_string()).collect());
+        return Ok(reconciliation);
     }
 
     // If the outer loop ever breaks, it means we encountered a
@@ -117,7 +117,7 @@ mod tests {
 		        {
 		            let mut temp_vec = Vec::new();
 		            $(
-		                temp_vec.push(String::from($x));
+		                temp_vec.push($x);
 		            )*
 		            Chord(temp_vec)
 		        }
@@ -132,7 +132,7 @@ mod tests {
     #[rstest]
     // TODO: Would be nice if we could avoid repeating the values in the expected rerr somehow.
     // Maybe with another macro, or a check_err() function?
-    #[case::fooey(chord!["f"], "foo", "far", Ok(vec![String::from("o"), String::from("a")]))]
+    #[case::fooey(chord!['f'], "foo", "far", Ok(vec!['o', 'a']))]
     fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
         let trie = Trie::new();
         let res = first_nonmatch(&trie, vec![a, b], chord);

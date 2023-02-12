@@ -41,11 +41,17 @@ pub struct Jam<'a> {
 }
 
 #[derive(Eq, Debug)]
-pub struct Chord(pub Vec<String>);
+pub struct Chord(pub Vec<char>);
 
 impl Chord {
-    fn from_shortname(shortname: &str) -> Chord {
-        Chord(shortname.split('-').map(String::from).collect())
+    fn from_shortname(chord_str: &str) -> Chord {
+        Chord(
+            chord_str
+                .split('-')
+                // TODO: This requires validation...
+                .map(|s| s.chars().nth(0).unwrap())
+                .collect(),
+        )
     }
 
     // NOTE: This is not very efficient. It basically clones the chord
@@ -55,7 +61,7 @@ impl Chord {
     // the two without actually doing the concatenation.
     pub fn append(&self, note: &char) -> Chord {
         let mut new_vec = self.0.clone();
-        new_vec.push(note.to_string());
+        new_vec.push(*note);
         Chord(new_vec)
     }
 }
@@ -71,7 +77,7 @@ impl PartialEq for Chord {
 
 impl std::fmt::Display for Chord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.join("-"))
+        write!(f, "{}", self.0.iter().collect::<String>())
     }
 }
 
@@ -83,7 +89,14 @@ impl Clone for Chord {
 
 impl TrieKey for Chord {
     fn encode_bytes(&self) -> Vec<u8> {
-        self.0.iter().flat_map(|s| s.encode_bytes()).collect()
+        self.0
+            .iter()
+            .flat_map(|ch| {
+                let mut buf: [u8; 4] = [0; 4];
+                let s = ch.encode_utf8(&mut buf);
+                s.encode_bytes()
+            })
+            .collect()
     }
 }
 
