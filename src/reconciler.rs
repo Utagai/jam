@@ -148,7 +148,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::fooey(chord!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::simple(chord!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::simple_overriden(chord!['z'], vec!["foo", "bar"], Ok(vec!['f', 'b']))]
+    #[case::simple_overriden_initially_same(chord!['z'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::almost_same(chord!['f'], vec!["lalalah", "lalalaz"], Ok(vec!['h', 'z']))]
+    #[case::three_way_conflict(chord!['f'], vec!["foo", "faz", "fiz"], Ok(vec!['o', 'a', 'i']))]
+    #[case::three_way_conflict_almost_same(chord!['f'], vec!["lalalah", "lalalaz", "lalalab"], Ok(vec!['h', 'z', 'b']))]
+    #[case::many_conflicts_keep_almost_reconciling(chord!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
+    #[case::unequal_length_conflicts_reconcile_in_time(chord!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] chord: Chord, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         let trie = Trie::new();
         let res = first_nonmatch(&trie, &conflicts, &chord);
@@ -159,7 +166,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::fooey(chord!['f'], vec!["foo", "foo"])]
+    #[case::same_target_names(chord!['f'], vec!["foo", "foo"])]
+    #[case::one_is_complete_prefix(chord!['f'], vec!["foo", "fool"])]
+    #[case::multiple_same_target_names(chord!['f'], vec!["foo", "foo", "foo", "foo"])]
+    #[case::multiple_one_is_complete_prefix(chord!['f'], vec!["foo", "fool", "baz", "quux"])]
+    #[case::multiple_all_but_one_is_complete_prefix(chord!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] chord: Chord, #[case] conflicts: Vec<&str>) {
         let trie = Trie::new();
         let res = first_nonmatch(&trie, &conflicts, &chord);
