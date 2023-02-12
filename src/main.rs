@@ -26,8 +26,18 @@ struct Cli {
     shortcut: Vec<char>,
 }
 
-fn main() -> anyhow::Result<()> {
-    let config_path = "./rsrc/simple.yaml";
+impl KV for Cli {
+    fn serialize(&self, _: &Record, serializer: &mut dyn slog::Serializer) -> Result {
+        serializer.emit_bool("dry_run", self.dry_run)?;
+        serializer.emit_str(
+            "shortcut",
+            // NOTE: I think this causes an allocation, and I feel like theoretically it may not be necessary.
+            // But I also don't think there's use in prematurely optimizing something like this.
+            &self.shortcut.iter().intersperse(&'-').collect::<String>(),
+        )
+    }
+}
+
 fn logger(config_path: &'static str) -> slog::Logger {
     let version = env!("CARGO_PKG_VERSION");
     let cwd = std::env::current_dir()
@@ -54,10 +64,14 @@ fn main() -> anyhow::Result<()> {
     debug!(logger, "parsed config");
 
     let desugared_cfg = cfg.desugar();
-    debug!(logger, "desugared config");
+    debug!(logger, "desugared config"; &desugared_cfg);
 
     let cli = Cli::parse();
-    debug!(logger, "parsed CLI flags");
+    debug!(
+        logger,
+        "parsed CLI flags";
+        &cli
+    );
 
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");

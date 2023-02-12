@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use slog::KV;
 
 use crate::{executor::ExecuteKind, reconciler};
 
@@ -26,6 +27,21 @@ pub struct DesugaredTargetCfg {
     pub execute_kind: ExecuteKind,
 }
 
+impl KV for DesugaredTargetCfg {
+    fn serialize(&self, _: &slog::Record, serializer: &mut dyn slog::Serializer) -> slog::Result {
+        serializer.emit_str("name", &self.name)?;
+        serializer.emit_str("shortcut_str", &self.shortcut_str)?;
+        serializer.emit_str("help", &self.help)?;
+        match &self.cmd {
+            Some(cmd_str) => serializer.emit_str("cmd", cmd_str)?,
+            None => serializer.emit_unit("cmd")?,
+        };
+        let dep_str = format!("[{}]", self.deps.join(","));
+        serializer.emit_str("deps", &dep_str)?;
+        serializer.emit_str("execute_kind", &self.execute_kind.to_string())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TargetCfg {
     pub name: String,
@@ -44,6 +60,15 @@ pub struct Options {
     pub reconciliation_strategy: reconciler::Strategy,
 }
 
+impl KV for Options {
+    fn serialize(&self, _: &slog::Record, serializer: &mut dyn slog::Serializer) -> slog::Result {
+        serializer.emit_str(
+            "reconciliation_strategy",
+            &self.reconciliation_strategy.to_string(),
+        )
+    }
+}
+
 // NOTE: 'Desugaring' may not exactly be the right terminology here.
 // But the overall idea is we are rewriting the config in a simpler
 // but perhaps more verbose and/or less readable form. This form is
@@ -52,6 +77,20 @@ pub struct Options {
 pub struct DesugaredConfig {
     pub options: Options,
     pub targets: Vec<DesugaredTargetCfg>,
+}
+
+impl KV for DesugaredConfig {
+    fn serialize(
+        &self,
+        record: &slog::Record,
+        serializer: &mut dyn slog::Serializer,
+    ) -> slog::Result {
+        self.options.serialize(record, serializer)?;
+        for target in &self.targets {
+            target.serialize(record, serializer)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]

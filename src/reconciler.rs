@@ -107,6 +107,12 @@ pub enum Strategy {
     FirstNonMatch,
 }
 
+impl std::fmt::Display for Strategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl Default for Strategy {
     fn default() -> Self {
         Self::Error
