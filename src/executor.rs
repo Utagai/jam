@@ -75,7 +75,7 @@ impl DryRunner {
 
 impl Executable for DryRunner {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("Dry running cmd: {}", cmd);
+        println!("dry running cmd: {}", cmd);
         Ok(true)
     }
 }

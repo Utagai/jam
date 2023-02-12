@@ -1,17 +1,18 @@
 #![feature(iter_intersperse)]
-use std::{fs::File, os};
+use std::fs::File;
 
 use clap::Parser;
-use slog::*;
 
 use config::Config;
 use jam::{Jam, Shortcut};
+use slog::{debug, info, Record, KV};
 
 use crate::executor::Executor;
 
 mod config;
 mod executor;
 mod jam;
+mod log;
 mod reconciler;
 
 /// J̲am (isn't) A̲nother M̲ake.
@@ -27,7 +28,7 @@ struct Cli {
 }
 
 impl KV for Cli {
-    fn serialize(&self, _: &Record, serializer: &mut dyn slog::Serializer) -> Result {
+    fn serialize(&self, _: &Record, serializer: &mut dyn slog::Serializer) -> slog::Result {
         serializer.emit_bool("dry_run", self.dry_run)?;
         serializer.emit_str(
             "shortcut",
@@ -38,43 +39,26 @@ impl KV for Cli {
     }
 }
 
-fn logger(config_path: &'static str) -> slog::Logger {
-    let version = env!("CARGO_PKG_VERSION");
-    let cwd = std::env::current_dir()
-        .expect("failed to get current working directory")
-        .into_os_string()
-        .into_string()
-        .expect("failed to convert cwd OS string to string");
-
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build();
-    let drain = std::sync::Mutex::new(drain).fuse();
-    slog::Logger::root(
-        drain,
-        o!("config" => config_path, "version" => version, "cwd" => cwd),
-    )
-}
-
 fn main() -> anyhow::Result<()> {
     let config_path = "./rsrc/simple.yaml";
-    let logger = logger(config_path);
-    debug!(logger, "jam says hi!");
+    let startup_logger = log::logger(log::Level::Trace, config_path);
+    debug!(startup_logger, "jam says hi!");
 
     let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
-    debug!(logger, "parsed config");
+    debug!(startup_logger, "parsed config");
 
     let desugared_cfg = cfg.desugar();
-    debug!(logger, "desugared config"; &desugared_cfg);
+    debug!(startup_logger, "desugared config"; &desugared_cfg);
 
     let cli = Cli::parse();
     debug!(
-        logger,
+        startup_logger,
         "parsed CLI flags";
         &cli
     );
 
-    let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
-    info!(logger, "finished startup");
+    let jam = Jam::new(&startup_logger, Executor::new(), &desugared_cfg)?;
+    info!(startup_logger, "finished startup");
 
     jam.execute(Shortcut(cli.shortcut))
 }
