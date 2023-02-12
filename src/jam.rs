@@ -7,6 +7,7 @@ use radix_trie::{Trie, TrieKey};
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
     executor::{ExecuteKind, Executor},
+    reconciler::reconcile,
 };
 
 struct Target<'a> {
@@ -63,6 +64,16 @@ impl Shortcut {
         let mut new_vec = self.0.clone();
         new_vec.push(*key);
         Shortcut(new_vec)
+    }
+
+    // NOTE: Same thing as described for append() above is worth considering here.
+    pub fn tail(&self) -> (Shortcut, char) {
+        let mut new_vec = self.0.clone();
+        let key = new_vec.pop();
+        (
+            Shortcut(new_vec),
+            key.expect("found an empty shortcut, but this should not be possible"),
+        )
     }
 }
 
@@ -248,14 +259,65 @@ impl<'a> Jam<'a> {
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
-        let nidxes = self
-            .shortcuts
-            .get(&shortcut)
-            .ok_or(Jam::no_cmd_for_shortcut(&shortcut))?;
-        if nidxes.len() > 1 {
-            return Err(self.ambiguous_shortcut(&shortcut, nidxes));
+        let shortcuts_ref = &self.shortcuts;
+        let mut target_idxes = vec![];
+        match shortcuts_ref.get(&shortcut) {
+            Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
+            None => {
+                // In this case, it is possible that the user has
+                // actually specified a reconciliation character,
+                // which won't exist in the trie until we
+                // reconcile. So let's do that.
+                let (tail, key) = shortcut.tail();
+                // To see if this is correct, first, we expect the tail to exist:
+                match shortcuts_ref.get(&tail) {
+                    Some(nidxes) => {
+                        // Secondly, not only must it exist, but it
+                        // must be referring to a shortcut that has
+                        // conflicts. If it has none, then the user
+                        // should just specify the tail.
+                        if nidxes.len() <= 1 {
+                            bail!(Jam::no_cmd_for_shortcut(&shortcut))
+                        }
+
+                        println!(
+                            "reconciling with strategy: {:#?}",
+                            self.opts.reconciliation_strategy
+                        );
+
+                        // If it does indeed have a conflict,
+                        // then let's make sure that the specified
+                        // reconciliation key is a valid one:
+                        let reconciliation_keys = reconcile(
+                            self.opts.reconciliation_strategy,
+                            &self.shortcuts,
+                            &nidxes.iter().map(|nidx| self.dag[*nidx].name).collect(),
+                            &shortcut,
+                        )?;
+
+                        let nidx = match reconciliation_keys
+                            .iter()
+                            .position(|reconciliation_key| reconciliation_key == &key)
+                        {
+                            // If it isn't there, then this reconciliation
+                            // key is not a good one and we should error.
+                            None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
+                            // However, and finally, if it is good, then
+                            // let's identify which nidx we are looking at
+                            // and return just that one:
+                            Some(pos) => nidxes[pos],
+                        };
+
+                        target_idxes = vec![nidx];
+                    }
+                    None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
+                }
+            }
+        };
+        if target_idxes.len() > 1 {
+            return Err(self.ambiguous_shortcut(&shortcut, &target_idxes));
         }
-        if let Some(nidx) = nidxes.first() {
+        if let Some(nidx) = target_idxes.first() {
             self.execute_target(*nidx)
         } else {
             bail!(Jam::no_cmd_for_shortcut(&shortcut))

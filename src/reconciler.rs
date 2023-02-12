@@ -1,7 +1,6 @@
 use std::{collections::HashSet, str::Chars};
 
-use anyhow::{anyhow, bail};
-use radix_trie::Trie;
+use anyhow::anyhow;
 use serde::Deserialize;
 
 use crate::jam::{Shortcut, ShortcutTrie};
@@ -105,7 +104,7 @@ fn error_reconciler(
 // a variable defined inside the anyhow! macro.
 pub static err_reconciler: Reconciler = error_reconciler;
 
-#[derive(PartialEq, Deserialize, Debug)]
+#[derive(PartialEq, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum Strategy {
     Error,
@@ -137,6 +136,7 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
+    use radix_trie::Trie;
     use rstest::rstest;
 
     macro_rules! shortcut {

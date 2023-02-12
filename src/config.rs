@@ -56,7 +56,6 @@ pub struct DesugaredConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    #[serde(flatten)]
     pub options: Options,
     pub targets: Vec<TargetCfg>,
 }

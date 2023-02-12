@@ -1,4 +1,6 @@
 ---
+options:
+  reconciliation_strategy: firstnonmatch
 targets:
   - name: "foo"
     cmd: "echo 'foo'"
