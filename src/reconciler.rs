@@ -8,7 +8,7 @@ use crate::jam::{Chord, ChordTrie};
 
 type Result = anyhow::Result<Vec<char>>;
 
-fn reconciliation_err(conflicts: Vec<&str>, chord: &Chord) -> anyhow::Error {
+fn reconciliation_err(conflicts: &Vec<&str>, chord: &Chord) -> anyhow::Error {
     anyhow!(
         "reconciliation failed for chord '{}'; still ambiguous (e.g. is it {}?)",
         chord,
@@ -16,9 +16,9 @@ fn reconciliation_err(conflicts: Vec<&str>, chord: &Chord) -> anyhow::Error {
     )
 }
 
-type Reconciler = fn(chords: &ChordTrie, conflicts: Vec<&str>, chord: &Chord) -> Result;
+type Reconciler = fn(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result;
 
-fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: &Chord) -> Result {
+fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result {
     // We now have an iterator in which every element is itself an
     // iterator over one conflicting target name. So, each of these iterators return one character each.
 
@@ -75,7 +75,7 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: &C
 /// targets that avoids any ambiguity.
 pub static first_nonmatch: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: &Chord) -> Result {
+fn error_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &Chord) -> Result {
     Err(reconciliation_err(conflicts, chord))
 }
 
@@ -99,7 +99,7 @@ impl Default for Strategy {
 pub fn reconcile(
     kind: Strategy,
     chords: &ChordTrie,
-    conflicts: Vec<&str>,
+    conflicts: &Vec<&str>,
     chord: &Chord,
 ) -> Result {
     let reconciler: Reconciler = match kind {
@@ -130,34 +130,28 @@ mod tests {
 		}
 
     // Shorthand for Err(reconciliation_err()).
-    fn rerr(conflicts: Vec<&str>, chord: &Chord) -> Result {
+    fn rerr(conflicts: &Vec<&str>, chord: &Chord) -> Result {
         Err(reconciliation_err(conflicts, chord))
     }
 
     #[rstest]
-    #[case::fooey(chord!['f'], "foo", "far", Ok(vec!['o', 'a']))]
-    fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
+    #[case::fooey(chord!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    fn check(#[case] chord: Chord, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, vec![a, b], &chord);
-        match expected {
-            Ok(chords) => assert_eq!(chords, res.expect("expected no error, but got one")),
-            Err(err) => assert_eq!(
-                format!("{:#?}", err),
-                format!(
-                    "{:#?}",
-                    res.expect_err("expected an error, but didn't get one")
-                )
-            ),
-        }
+        let res = first_nonmatch(&trie, &conflicts, &chord);
+        assert_eq!(
+            expected.unwrap(),
+            res.expect("expected no error, but got one")
+        );
     }
 
     #[rstest]
-    #[case::fooey(chord!['f'], "foo", "foo")]
-    fn check_err(#[case] chord: Chord, #[case] a: &str, #[case] b: &str) {
+    #[case::fooey(chord!['f'], vec!["foo", "foo"])]
+    fn check_err(#[case] chord: Chord, #[case] conflicts: Vec<&str>) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, vec![a, b], &chord);
+        let res = first_nonmatch(&trie, &conflicts, &chord);
         assert_eq!(
-            format!("{:#?}", rerr(vec![a, b], &chord).unwrap_err()),
+            format!("{:#?}", rerr(&conflicts, &chord).unwrap_err()),
             format!(
                 "{:#?}",
                 res.expect_err("expected an error, but didn't get one")
