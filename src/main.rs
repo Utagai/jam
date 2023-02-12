@@ -23,6 +23,10 @@ struct Cli {
     #[clap(short, long, value_parser, default_value_t = false)]
     dry_run: bool,
 
+    /// Adjusts the logging level.
+    #[clap(short, long, value_enum)]
+    log_level: Option<log::Level>,
+
     /// Individual keys that together give a shortcut, uniquely identifying a jam command to execute.
     shortcut: Vec<char>,
 }
@@ -35,30 +39,37 @@ impl KV for Cli {
             // NOTE: I think this causes an allocation, and I feel like theoretically it may not be necessary.
             // But I also don't think there's use in prematurely optimizing something like this.
             &self.shortcut.iter().intersperse(&'-').collect::<String>(),
-        )
+        )?;
+        match self.log_level {
+            Some(log_level) => serializer.emit_str("log_level", &log_level.to_string()),
+            _ => Ok(()),
+        }
     }
 }
 
 fn main() -> anyhow::Result<()> {
     let config_path = "./rsrc/simple.yaml";
-    let startup_logger = log::logger(log::Level::Trace, config_path);
-    debug!(startup_logger, "jam says hi!");
-
     let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
-    debug!(startup_logger, "parsed config");
 
     let desugared_cfg = cfg.desugar();
-    debug!(startup_logger, "desugared config"; &desugared_cfg);
 
     let cli = Cli::parse();
+
+    let logger = log::logger(
+        cli.log_level
+            .or(desugared_cfg.options.log_level)
+            .unwrap_or(log::Level::Disabled),
+        config_path,
+    );
+    debug!(logger, "desugared config"; &desugared_cfg);
     debug!(
-        startup_logger,
+        logger,
         "parsed CLI flags";
         &cli
     );
 
-    let jam = Jam::new(&startup_logger, Executor::new(), &desugared_cfg)?;
-    info!(startup_logger, "finished startup");
+    let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
+    info!(logger, "finished startup");
 
     jam.execute(Shortcut(cli.shortcut))
 }

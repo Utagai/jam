@@ -1,6 +1,7 @@
 ---
 options:
   reconciliation_strategy: firstnonmatch
+  log_level: disabled
 targets:
   - name: "foo"
     cmd: "echo 'foo'"

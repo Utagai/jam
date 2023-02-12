@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use slog::KV;
 
-use crate::{executor::ExecuteKind, reconciler};
+use crate::{executor::ExecuteKind, log, reconciler};
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
 /// re-written and simplified so that the parsing logic can be
@@ -58,6 +58,8 @@ pub struct TargetCfg {
 pub struct Options {
     #[serde(default = "reconciler::Strategy::default")]
     pub reconciliation_strategy: reconciler::Strategy,
+
+    pub log_level: Option<log::Level>,
 }
 
 impl KV for Options {
@@ -65,7 +67,12 @@ impl KV for Options {
         serializer.emit_str(
             "reconciliation_strategy",
             &self.reconciliation_strategy.to_string(),
-        )
+        )?;
+        if let Some(log_level) = self.log_level {
+            serializer.emit_str("log_level", &log_level.to_string())?;
+        };
+
+        Ok(())
     }
 }
 

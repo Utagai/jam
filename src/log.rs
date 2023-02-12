@@ -1,7 +1,11 @@
-use serde::Deserialize;
-use slog::{o, Drain, Filter, FilterFn, LevelFilter, Record};
+use std::fmt::Display;
 
-#[derive(Deserialize, Clone, Copy)]
+use clap::ValueEnum;
+use serde::Deserialize;
+use slog::{o, Drain, Filter, Record};
+
+#[derive(ValueEnum, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
     Critical,
     Error,
@@ -10,6 +14,18 @@ pub enum Level {
     Debug,
     Trace,
     Disabled,
+}
+
+impl Display for Level {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#?}", self)
+    }
+}
+
+impl Default for Level {
+    fn default() -> Self {
+        return Level::Disabled;
+    }
 }
 
 impl Level {
