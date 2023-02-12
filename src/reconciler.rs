@@ -29,11 +29,12 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
         .iter()
         .map(|conflict| conflict.chars())
         .collect::<Vec<Chars<'_>>>();
+    let mut seen_chars: HashSet<char> = HashSet::new();
+    let mut reconciliation = Vec::new();
     'outer: loop {
+        seen_chars.clear();
+        reconciliation.clear();
         println!("starting outer!");
-        // TODO: Can avoid the allocation and just zero them out instead.
-        let mut seen_chars: HashSet<char> = HashSet::new();
-        let mut reconciliation = Vec::new();
         for i in 0..conflict_iters.len() {
             println!("are we even running?");
             match conflict_iters[i].next() {
