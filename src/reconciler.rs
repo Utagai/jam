@@ -1,10 +1,12 @@
+use std::{collections::HashSet, str::Chars};
+
 use anyhow::{anyhow, bail};
 use radix_trie::Trie;
 use serde::Deserialize;
 
 use crate::jam::{Chord, ChordTrie};
 
-type Result = anyhow::Result<(Chord, Chord)>;
+type Result = anyhow::Result<Vec<String>>;
 
 fn reconciliation_err(conflicts: Vec<&str>, c: Chord) -> anyhow::Error {
     anyhow!(
@@ -17,7 +19,55 @@ fn reconciliation_err(conflicts: Vec<&str>, c: Chord) -> anyhow::Error {
 type Reconciler = fn(chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result;
 
 fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result {
-    Err(reconciliation_err(conflicts, chord))
+    // We now have an iterator in which every element is itself an
+    // iterator over one conflicting target name. So, each of these iterators return one character each.
+
+    // Now, we want to go through each of these iterators, one element
+    // at a time. In other words, we are going through every character
+    // of every conflict one at a time.
+    let mut conflict_iters = conflicts
+        .iter()
+        .map(|conflict| conflict.chars())
+        .collect::<Vec<Chars<'_>>>();
+    'outer: loop {
+        println!("starting outer!");
+        // TODO: Can avoid the allocation and just zero them out instead.
+        let mut seen_chars: HashSet<char> = HashSet::new();
+        let mut reconciliation = Vec::new();
+        for i in 0..conflict_iters.len() {
+            println!("are we even running?");
+            match conflict_iters[i].next() {
+                Some(ch) => {
+                    println!("some ch: {}", ch);
+                    if seen_chars.contains(&ch) {
+                        println!("o no it contains :(");
+                        continue 'outer;
+                    } else {
+                        let new_chord = chord.append(&ch);
+                        if chords.get(&new_chord).is_some() {
+                            // This chord extension may avoid conflicts here, but not elsewhere.
+                            continue 'outer;
+                        }
+                        // If we get here though, we have a potential solution.
+                        seen_chars.insert(ch);
+                        reconciliation.push(ch);
+                    }
+                }
+                None => break 'outer,
+            }
+        }
+        // If we make it through the loop, we should have a solution. Let's return it.
+        return Ok(reconciliation.iter().map(|ch| ch.to_string()).collect());
+    }
+
+    // If the outer loop ever breaks, it means we encountered a
+    // situation where we couldn't find any non-matching characters.
+    // This includes cases like foo vs. fool, where one target is a
+    // complete prefix of the other.
+    // But it also includes foo vs foo. This latter case is not really
+    // possible in practice, since we validate against it, but is
+    // captured here anyways for robustness.
+    return Err(reconciliation_err(conflicts, chord));
 }
 
 /// The simple reconciler attempts to reconcile a chord ambiguity by
@@ -82,15 +132,18 @@ mod tests {
     #[rstest]
     // TODO: Would be nice if we could avoid repeating the values in the expected rerr somehow.
     // Maybe with another macro, or a check_err() function?
-    #[case::fooey(chord!["f"], "foo", "far", rerr(vec!["foo", "far"], chord!["f"]))]
+    #[case::fooey(chord!["f"], "foo", "far", Ok(vec![String::from("o"), String::from("a")]))]
     fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
         let trie = Trie::new();
         let res = first_nonmatch(&trie, vec![a, b], chord);
         match expected {
-            Ok(chords) => assert_eq!(chords, res.expect("expected no error")),
+            Ok(chords) => assert_eq!(chords, res.expect("expected no error, but got one")),
             Err(err) => assert_eq!(
                 format!("{:#?}", err),
-                format!("{:#?}", res.expect_err("expected an error"))
+                format!(
+                    "{:#?}",
+                    res.expect_err("expected an error, but didn't get one")
+                )
             ),
         }
     }
