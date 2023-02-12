@@ -1,6 +1,7 @@
-use std::fs::File;
+use std::{fs::File, os};
 
 use clap::Parser;
+use slog::*;
 
 use config::Config;
 use jam::{Jam, Shortcut};
@@ -25,15 +26,34 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    let cfg_file = File::open("./rsrc/simple.yaml")?;
+    let config_path = "./rsrc/simple.yaml";
+    let version = env!("CARGO_PKG_VERSION");
+    let cwd = std::env::current_dir()
+        .expect("failed to get current working directory")
+        .to_string_lossy()
+        .to_string();
+    let decorator = slog_term::TermDecorator::new().build();
+    let drain = slog_term::CompactFormat::new(decorator).build();
+    let drain = std::sync::Mutex::new(drain).fuse();
+    let logger = slog::Logger::root(
+        drain,
+        o!("config" => config_path, "version" => version, "cwd" => cwd),
+    );
+
+    let cfg_file = File::open(config_path)?;
     let cfg: Config = serde_yaml::from_reader(cfg_file)?;
+    info!(logger, "parsed config");
     let desugared_cfg = cfg.desugar();
-    println!("{:#?}", desugared_cfg.options);
-    // println!("{:#?}", desugared_cfg.targets);
+    info!(logger, "desugared config");
+
+    let cfg_logger = logger.new(o!("reconciliation_strategy" => format!("{:#?}", desugared_cfg.options.reconciliation_strategy)));
     let cli = Cli::parse();
+    let cli_logger = logger.new(o!("dry_run" => cli.dry_run, "shortcut" => "a-l"));
+    info!(cli_logger, "parsed CLI flags");
     let executor = Executor::new();
 
-    let jam = Jam::new(executor, &desugared_cfg)?;
+    let jam = Jam::new(&cli_logger, executor, &desugared_cfg)?;
+    info!(cli_logger, "fully initialized Jam structures");
 
     jam.execute(Shortcut(cli.shortcut))
 }

@@ -41,9 +41,7 @@ fn first_nonmatch_reconciler(
         seen_chars.clear();
         reconciliation.clear();
         let mut still_conflict = false;
-        println!("starting outer!");
         for i in 0..conflict_iters.len() {
-            println!("are we even running?");
             let next_ch = conflict_iters[i].next();
             if still_conflict {
                 // Just skip, since there's no purpose. We just need
@@ -52,9 +50,7 @@ fn first_nonmatch_reconciler(
             }
             match next_ch {
                 Some(ch) => {
-                    println!("some ch: {}", ch);
                     if seen_chars.contains(&ch) {
-                        println!("o no it contains :(");
                         still_conflict = true;
                     } else {
                         let new_shortcut = shortcut.append(&ch);

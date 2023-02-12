@@ -7,10 +7,6 @@ targets:
     execute_kind: "dryrun"
   - name: "alpha"
     cmd: "echo 'foo'"
-  - name: "ambiguous"
-    cmd: "echo 'foo'"
-  - name: "bar"
-    cmd: "echo 'bar'"
     targets:
       - name: "baz"
         help: "runs the baz command, duh"
@@ -19,6 +15,10 @@ targets:
         cmd: "echo 'bam'"
         deps:
           - "foo"
+  - name: "ambiguous"
+    cmd: "echo 'foo'"
+  - name: "bar"
+    cmd: "echo 'bar'"
   - name: "nocmd"
     targets:
       - name: "corge"

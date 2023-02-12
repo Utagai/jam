@@ -97,10 +97,6 @@ impl Shell {
 
 impl Executable for Shell {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!(
-            "Executing cmd: {}",
-            format!("{} {} '{}'", self.shell, self.exec_flag, cmd)
-        );
         let exit_status = std::process::Command::new(&self.shell)
             .arg(self.exec_flag)
             .arg(cmd)

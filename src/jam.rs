@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex, Walker};
 use radix_trie::{Trie, TrieKey};
+use slog::{debug, info, o};
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
@@ -39,6 +40,7 @@ pub struct Jam<'a> {
     executor: Executor,
     dag: Dag<Target<'a>, IdxT>,
     shortcuts: ShortcutTrie,
+    logger: slog::Logger,
 }
 
 #[derive(Eq, Debug)]
@@ -112,7 +114,11 @@ impl TrieKey for Shortcut {
 }
 
 impl<'a> Jam<'a> {
-    pub fn new(executor: Executor, cfg: &'a DesugaredConfig) -> Result<Jam<'a>> {
+    pub fn new(
+        logger: &slog::Logger,
+        executor: Executor,
+        cfg: &'a DesugaredConfig,
+    ) -> Result<Jam<'a>> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
@@ -171,7 +177,7 @@ impl<'a> Jam<'a> {
         // recorded in our node index map, which means it doesn't
         // exist, as well as cases where adding the dep to the DAG
         // triggers a cycle.
-        for dep in deps {
+        for dep in &deps {
             let dependee_idx = node_idxes
                 .get(dep.0)
                 .ok_or(Jam::nonexistent_dep_err(dep.0))?;
@@ -180,8 +186,10 @@ impl<'a> Jam<'a> {
                 .ok_or(Jam::nonexistent_dep_err(dep.1))?;
             dag.add_edge(*dependee_idx, *dependent_idx, 0)
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
+            debug!(logger, "linked dependency"; o!("from" => dep.0, "to" => dep.1));
         }
 
+        info!(logger, "initialization finished"; o!("num_targets" => node_idxes.len(), "dep_links" => deps.len()));
         Ok(Jam {
             // NOTE: If we ever end up having a distinction between
             // config-time options vs. run-time options, we may want
@@ -190,6 +198,7 @@ impl<'a> Jam<'a> {
             executor,
             dag,
             shortcuts: trie,
+            logger: logger.new(o!()),
         })
     }
 
@@ -236,21 +245,23 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
-    fn execute_target(&self, nidx: NodeIdx) -> Result<()> {
+    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx) -> Result<()> {
+        let target = &self.dag[nidx];
+        let target_logger = logger.new(o!("target" => target.name.to_string()));
         let deps = self.dag.children(nidx);
         let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
-            println!("\tExecuting dependency: {:?}", self.dag[dep.1].name);
-            self.execute_target(dep.1)?;
+            let dep_logger = target_logger.new(o!("dep" => self.dag[dep.1].name.to_string())); // TODO: Clone?
+            info!(dep_logger, "executing dependency");
+            self.execute_target(&dep_logger, dep.1)?;
             num_deps_execed += 1;
         }
-        let target = &self.dag[nidx];
-        println!("found target: '{}'", target.name);
         if let Some(cmd) = target.cmd {
+            info!(logger, "executing target"; o!("cmd" => cmd));
             if self.executor.execute(target.execute_kind, cmd)? {
-                println!("\tSuccessfully executed!")
+                info!(logger, "successfully executed target"; o!("cmd" => cmd));
             } else {
-                println!("\tFailed to execute!")
+                info!(logger, "failed to execute target");
             }
         } else if num_deps_execed <= 0 {
             bail!(Jam::cannot_exec_cmd(target))
@@ -259,11 +270,13 @@ impl<'a> Jam<'a> {
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
+        info!(self.logger, "executing");
         let shortcuts_ref = &self.shortcuts;
         let mut target_idxes = vec![];
         match shortcuts_ref.get(&shortcut) {
             Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
             None => {
+                info!(self.logger, "found ambiguity, attempting reconciliation");
                 // In this case, it is possible that the user has
                 // actually specified a reconciliation character,
                 // which won't exist in the trie until we
@@ -280,10 +293,10 @@ impl<'a> Jam<'a> {
                             bail!(Jam::no_cmd_for_shortcut(&shortcut))
                         }
 
-                        println!(
-                            "reconciling with strategy: {:#?}",
+                        info!(self.logger, "reconciling with strategy"; o!("strategy" => format!(
+                            "{:#?}",
                             self.opts.reconciliation_strategy
-                        );
+                        )));
 
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
@@ -308,6 +321,7 @@ impl<'a> Jam<'a> {
                             Some(pos) => nidxes[pos],
                         };
 
+                        info!(self.logger, "reconciled");
                         target_idxes = vec![nidx];
                     }
                     None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
@@ -318,7 +332,7 @@ impl<'a> Jam<'a> {
             return Err(self.ambiguous_shortcut(&shortcut, &target_idxes));
         }
         if let Some(nidx) = target_idxes.first() {
-            self.execute_target(*nidx)
+            self.execute_target(&self.logger, *nidx)
         } else {
             bail!(Jam::no_cmd_for_shortcut(&shortcut))
         }
@@ -335,6 +349,7 @@ mod tests {
         use super::*;
 
         use crate::config::{Config, TargetCfg};
+        use slog::*;
 
         use crate::config::Options;
 
@@ -378,8 +393,15 @@ mod tests {
             }
         }
 
+        fn test_logger() -> slog::Logger {
+            let decorator = slog_term::TermDecorator::new().build();
+            let drain = slog_term::CompactFormat::new(decorator).build();
+            let drain = std::sync::Mutex::new(drain).fuse();
+            slog::Logger::root(drain, o!())
+        }
+
         fn get_jam(cfg: &DesugaredConfig) -> Jam {
-            Jam::new(Executor::new(), cfg).expect("expected no errors from parsing")
+            Jam::new(&test_logger(), Executor::new(), cfg).expect("expected no errors from parsing")
         }
 
         fn check_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
@@ -390,7 +412,7 @@ mod tests {
                 targets,
             }
             .desugar();
-            if let Err(err) = Jam::new(Executor::new(), &cfg) {
+            if let Err(err) = Jam::new(&test_logger(), Executor::new(), &cfg) {
                 assert_eq!(format!("{err}").trim(), expected_err)
             } else {
                 panic!("expected an error from parsing, but got none")
