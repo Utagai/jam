@@ -31,34 +31,47 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
         .collect::<Vec<Chars<'_>>>();
     let mut seen_chars: HashSet<char> = HashSet::new();
     let mut reconciliation = Vec::new();
-    'outer: loop {
+    loop {
+        // These are per-iteration states, so clear them before we
+        // start one lest we include state from the last iteration.
         seen_chars.clear();
         reconciliation.clear();
+        let mut still_conflict = false;
         println!("starting outer!");
         for i in 0..conflict_iters.len() {
             println!("are we even running?");
-            match conflict_iters[i].next() {
+            let next_ch = conflict_iters[i].next();
+            if still_conflict {
+                // Just skip, since there's no purpose. We just need
+                // to make sure we've iterated the iterator.
+                continue;
+            }
+            match next_ch {
                 Some(ch) => {
                     println!("some ch: {}", ch);
                     if seen_chars.contains(&ch) {
                         println!("o no it contains :(");
-                        continue 'outer;
+                        still_conflict = true;
                     } else {
                         let new_chord = chord.append(&ch);
                         if chords.get(&new_chord).is_some() {
                             // This chord extension may avoid conflicts here, but not elsewhere.
-                            continue 'outer;
+                            still_conflict = true;
                         }
                         // If we get here though, we have a potential solution.
                         seen_chars.insert(ch);
                         reconciliation.push(ch);
                     }
                 }
-                None => break 'outer,
+                None => return Err(reconciliation_err(conflicts, chord)), // One or more of these targets ran out of characters. We're done for.
             }
         }
-        // If we make it through the loop, we should have a solution. Let's return it.
-        return Ok(reconciliation);
+        // If we make it through the loop, we should have a solution
+        // as long as we didn't run into any conflicts. Let's return
+        // it if so.
+        if !still_conflict {
+            return Ok(reconciliation);
+        }
     }
 
     // If the outer loop ever breaks, it means we encountered a
@@ -68,7 +81,6 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: &Vec<&str>, chord: &
     // But it also includes foo vs foo. This latter case is not really
     // possible in practice, since we validate against it, but is
     // captured here anyways for robustness.
-    return Err(reconciliation_err(conflicts, chord));
 }
 
 /// The simple reconciler attempts to reconcile a chord ambiguity by
