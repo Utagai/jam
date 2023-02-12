@@ -6,37 +6,18 @@ use crate::jam::{Chord, ChordTrie};
 
 type Result = anyhow::Result<(Chord, Chord)>;
 
-fn reconciliation_err(c: Chord, a: &str, b: &str) -> anyhow::Error {
+fn reconciliation_err(conflicts: Vec<&str>, c: Chord) -> anyhow::Error {
     anyhow!(
         "reconciliation failed for chord '{}'; still ambiguous (e.g. is it {}?)",
         c,
-        vec![a, b].join(" or ")
+        conflicts.join(" or ")
     )
 }
 
-type Reconciler = fn(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result;
+type Reconciler = fn(chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result;
 
-fn first_nonmatch_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
-    let len_diff = a.len().abs_diff(b.len());
-    let a_iter = a
-        .chars()
-        .chain(std::iter::repeat('.'))
-        .take(if a.len() > b.len() { 0 } else { len_diff });
-    let b_iter = b
-        .chars()
-        .chain(std::iter::repeat('.'))
-        .take(if a.len() > b.len() { 0 } else { len_diff });
-    a_iter
-        .zip(b_iter)
-        .filter_map(|(ach, bch)| {
-            if ach != bch {
-                Some((chord.append(&ach), chord.append(&bch)))
-            } else {
-                None
-            }
-        })
-        .find(|(new_ac, new_bc)| chords.get(new_ac).is_none() && chords.get(new_bc).is_none())
-        .ok_or(reconciliation_err(chord, a, b))
+fn first_nonmatch_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result {
+    Err(reconciliation_err(conflicts, chord))
 }
 
 /// The simple reconciler attempts to reconcile a chord ambiguity by
@@ -44,8 +25,8 @@ fn first_nonmatch_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str)
 /// targets that avoids any ambiguity.
 pub static first_nonmatch: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
-    Err(reconciliation_err(chord, a, b))
+fn error_reconciler(chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result {
+    Err(reconciliation_err(conflicts, chord))
 }
 
 // NOTE: We have to name this err because otherwise it conflicts with
@@ -65,13 +46,13 @@ impl Default for Strategy {
     }
 }
 
-pub fn reconcile(kind: Strategy, chords: &ChordTrie, chord: Chord, a: &str, b: &str) -> Result {
+pub fn reconcile(kind: Strategy, chords: &ChordTrie, conflicts: Vec<&str>, chord: Chord) -> Result {
     let reconciler: Reconciler = match kind {
         Strategy::Error => err_reconciler,
         Strategy::FirstNonMatch => first_nonmatch,
     };
 
-    reconciler(chords, chord, a, b)
+    reconciler(chords, conflicts, chord)
 }
 
 #[cfg(test)]
@@ -94,17 +75,17 @@ mod tests {
 		}
 
     // Shorthand for Err(reconciliation_err()).
-    fn rerr(chord: Chord, a: &str, b: &str) -> Result {
-        Err(reconciliation_err(chord, a, b))
+    fn rerr(conflicts: Vec<&str>, chord: Chord) -> Result {
+        Err(reconciliation_err(conflicts, chord))
     }
 
     #[rstest]
     // TODO: Would be nice if we could avoid repeating the values in the expected rerr somehow.
     // Maybe with another macro, or a check_err() function?
-    #[case::fooey(chord!["f"], "foo", "far", rerr(chord!["f"], "foo", "far"))]
+    #[case::fooey(chord!["f"], "foo", "far", rerr(vec!["foo", "far"], chord!["f"]))]
     fn check(#[case] chord: Chord, #[case] a: &str, #[case] b: &str, #[case] expected: Result) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, chord, a, b);
+        let res = first_nonmatch(&trie, vec![a, b], chord);
         match expected {
             Ok(chords) => assert_eq!(chords, res.expect("expected no error")),
             Err(err) => assert_eq!(
