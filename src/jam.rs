@@ -130,6 +130,10 @@ impl<'a> Jam<'a> {
             Self::validate_target_cfg(target_cfg, &node_idxes)?;
 
             let target = Target::from(target_cfg);
+            // NOTE: I don't remember why, but I recall finding that
+            // this .clone() is mostly necessary if we want to avoid
+            // losing readability. Also possible is of course that I'm
+            // not good enough at rust to see how to avoid it.
             let target_shortcut = target.shortcut.clone();
 
             // Keep track of the dep links. Once all the targets have
@@ -189,7 +193,7 @@ impl<'a> Jam<'a> {
             debug!(logger, "linked dependency"; o!("from" => dep.0, "to" => dep.1));
         }
 
-        info!(logger, "initialization finished"; o!("num_targets" => node_idxes.len(), "dep_links" => deps.len()));
+        debug!(logger, "finished initializing structures"; o!("num_targets" => node_idxes.len(), "dep_links" => deps.len()));
         Ok(Jam {
             // NOTE: If we ever end up having a distinction between
             // config-time options vs. run-time options, we may want
@@ -245,21 +249,24 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
-    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx) -> Result<()> {
+    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> Result<()> {
         let target = &self.dag[nidx];
-        let target_logger = logger.new(o!("target" => target.name.to_string()));
+        info!(
+            logger,
+            "{}", if depth <= 0 {"executing target"} else {"executing dependency"};
+            o!("name" => target.name, "depth" => depth)
+        );
         let deps = self.dag.children(nidx);
         let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
-            let dep_logger = target_logger.new(o!("dep" => self.dag[dep.1].name.to_string())); // TODO: Clone?
-            info!(dep_logger, "executing dependency");
-            self.execute_target(&dep_logger, dep.1)?;
+            let dep_logger = logger.new(o!("parent" => target.name.to_string()));
+            self.execute_target(&dep_logger, dep.1, depth + 1)?;
             num_deps_execed += 1;
         }
         if let Some(cmd) = target.cmd {
-            info!(logger, "executing target"; o!("cmd" => cmd));
+            info!(logger, "running executor"; o!("cmd" => cmd));
             if self.executor.execute(target.execute_kind, cmd)? {
-                info!(logger, "successfully executed target"; o!("cmd" => cmd));
+                info!(logger, "successfully executed target");
             } else {
                 info!(logger, "failed to execute target");
             }
@@ -272,11 +279,11 @@ impl<'a> Jam<'a> {
     pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
         info!(self.logger, "executing");
         let shortcuts_ref = &self.shortcuts;
-        let mut target_idxes = vec![];
+        let target_idxes;
         match shortcuts_ref.get(&shortcut) {
             Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
             None => {
-                info!(self.logger, "found ambiguity, attempting reconciliation");
+                debug!(self.logger, "found ambiguity, attempting reconciliation");
                 // In this case, it is possible that the user has
                 // actually specified a reconciliation character,
                 // which won't exist in the trie until we
@@ -293,10 +300,7 @@ impl<'a> Jam<'a> {
                             bail!(Jam::no_cmd_for_shortcut(&shortcut))
                         }
 
-                        info!(self.logger, "reconciling with strategy"; o!("strategy" => format!(
-                            "{:#?}",
-                            self.opts.reconciliation_strategy
-                        )));
+                        info!(self.logger, "reconciling with strategy"; o!("strategy" => self.opts.reconciliation_strategy.to_string()));
 
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
@@ -321,7 +325,7 @@ impl<'a> Jam<'a> {
                             Some(pos) => nidxes[pos],
                         };
 
-                        info!(self.logger, "reconciled");
+                        debug!(self.logger, "reconciled");
                         target_idxes = vec![nidx];
                     }
                     None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
@@ -332,7 +336,7 @@ impl<'a> Jam<'a> {
             return Err(self.ambiguous_shortcut(&shortcut, &target_idxes));
         }
         if let Some(nidx) = target_idxes.first() {
-            self.execute_target(&self.logger, *nidx)
+            self.execute_target(&self.logger, *nidx, 0)
         } else {
             bail!(Jam::no_cmd_for_shortcut(&shortcut))
         }

@@ -1,3 +1,4 @@
+#![feature(iter_intersperse)]
 use std::{fs::File, os};
 
 use clap::Parser;
@@ -27,33 +28,39 @@ struct Cli {
 
 fn main() -> anyhow::Result<()> {
     let config_path = "./rsrc/simple.yaml";
+fn logger(config_path: &'static str) -> slog::Logger {
     let version = env!("CARGO_PKG_VERSION");
     let cwd = std::env::current_dir()
         .expect("failed to get current working directory")
-        .to_string_lossy()
-        .to_string();
+        .into_os_string()
+        .into_string()
+        .expect("failed to convert cwd OS string to string");
+
     let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::CompactFormat::new(decorator).build();
+    let drain = slog_term::FullFormat::new(decorator).build();
     let drain = std::sync::Mutex::new(drain).fuse();
-    let logger = slog::Logger::root(
+    slog::Logger::root(
         drain,
         o!("config" => config_path, "version" => version, "cwd" => cwd),
-    );
+    )
+}
 
-    let cfg_file = File::open(config_path)?;
-    let cfg: Config = serde_yaml::from_reader(cfg_file)?;
-    info!(logger, "parsed config");
+fn main() -> anyhow::Result<()> {
+    let config_path = "./rsrc/simple.yaml";
+    let logger = logger(config_path);
+    debug!(logger, "jam says hi!");
+
+    let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
+    debug!(logger, "parsed config");
+
     let desugared_cfg = cfg.desugar();
-    info!(logger, "desugared config");
+    debug!(logger, "desugared config");
 
-    let cfg_logger = logger.new(o!("reconciliation_strategy" => format!("{:#?}", desugared_cfg.options.reconciliation_strategy)));
     let cli = Cli::parse();
-    let cli_logger = logger.new(o!("dry_run" => cli.dry_run, "shortcut" => "a-l"));
-    info!(cli_logger, "parsed CLI flags");
-    let executor = Executor::new();
+    debug!(logger, "parsed CLI flags");
 
-    let jam = Jam::new(&cli_logger, executor, &desugared_cfg)?;
-    info!(cli_logger, "fully initialized Jam structures");
+    let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
+    info!(logger, "finished startup");
 
     jam.execute(Shortcut(cli.shortcut))
 }
