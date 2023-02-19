@@ -80,6 +80,14 @@ impl Shortcut {
             key.expect("tail called for empty shortcut"),
         )
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&char> {
+        self.0.get(idx)
+    }
 }
 
 impl PartialEq for Shortcut {
@@ -258,7 +266,7 @@ impl<'a> Jam<'a> {
             .subtrie(&prefix)
             .unwrap()
             .keys()
-            .filter_map(|k| k.0.get(prefix.0.len()).copied())
+            .filter_map(|k| k.get(prefix.len()).copied())
             .collect();
         // Because the keys we return are individual _characters_ of
         // _full_ sequences, it is possible to return duplicates

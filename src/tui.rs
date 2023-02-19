@@ -65,7 +65,7 @@ fn run_app<B: Backend>(
                 if let KeyCode::Char(key) = key.code {
                     if app.jam.next_keys(&app.prefix).contains(&key) {
                         app.append(key);
-                        if app.jam.has(&app.prefix) && app.prefix.0.len() > 1 {
+                        if app.jam.has(&app.prefix) && app.prefix.len() > 1 {
                             return Ok(app.prefix);
                         }
                     } else {
