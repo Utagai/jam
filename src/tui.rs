@@ -63,7 +63,7 @@ fn run_app<B: Backend>(
                 }
 
                 if let KeyCode::Char(key) = key.code {
-                    if app.jam.keys(&app.prefix).contains(&key) {
+                    if app.jam.next_keys(&app.prefix).contains(&key) {
                         app.append(key);
                         if app.jam.has(&app.prefix) && app.prefix.0.len() > 1 {
                             return Ok(app.prefix);
@@ -89,7 +89,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // Text to show in paragraph.
     let lines = app
         .jam
-        .keys(&app.prefix)
+        .next_keys(&app.prefix)
         .iter()
         .map(|k| Spans::from(format!("key: {}", k)))
         .collect::<Vec<Spans>>();

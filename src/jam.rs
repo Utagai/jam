@@ -252,18 +252,21 @@ impl<'a> Jam<'a> {
         anyhow!("target '{}' has no executable function", target.name)
     }
 
-    pub fn keys(&self, prefix: &Shortcut) -> Vec<char> {
+    pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let mut keys: Vec<char> = self
             .shortcuts
             .subtrie(&prefix)
             .unwrap()
             .keys()
-            .filter_map(|k| k.0.get(prefix.0.len()))
-            // TODO: I have a feeling that we don't need this *k map
-            // and we can use some method on Option that lets us turn
-            // Option<&T> -> Option<T>. Who knows.
-            .map(|k| *k)
+            .filter_map(|k| k.0.get(prefix.0.len()).copied())
             .collect();
+        // Because the keys we return are individual _characters_ of
+        // _full_ sequences, it is possible to return duplicates
+        // here. For example, consider the following shortcuts to
+        // exist:
+        //   a
+        //   ab
+        // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
         keys.sort_unstable();
         keys.dedup();
         return keys;
