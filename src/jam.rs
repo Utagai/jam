@@ -1,4 +1,3 @@
-use core::fmt;
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
@@ -130,7 +129,7 @@ impl TrieKey for Shortcut {
 }
 
 #[derive(Error, Debug)]
-pub enum JamExecError {
+pub enum ExecError {
     #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
     Ambiguous {
         shortcut: Shortcut,
@@ -146,14 +145,21 @@ pub enum JamExecError {
     Executor { description: String },
 }
 
-type ExecResult<T> = Result<T, JamExecError>;
+// ParseResult is not really very useful at the moment. However, it
+// may be something that we wish to embellish further in the
+// future. This type can allow us to do that and save a bit of
+// keystrokes. More importantly though, it lets us split the Jam API
+// into two distinct classes errors: parsing errors & execution
+// errors.
+type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
+type ExecResult<T> = Result<T, ExecError>;
 
 impl<'a> Jam<'a> {
     pub fn new(
         logger: &slog::Logger,
         executor: Executor,
         cfg: &'a DesugaredConfig,
-    ) -> anyhow::Result<Jam<'a>> {
+    ) -> ParseResult<Jam<'a>> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
@@ -219,10 +225,10 @@ impl<'a> Jam<'a> {
         for dep in &deps {
             let dependee_idx = node_idxes
                 .get(dep.0)
-                .ok_or(Jam::nonexistent_dep_err(dep.0))?;
+                .ok_or(anyhow!("reference to nonexistent dep: {}", dep.0))?;
             let dependent_idx = node_idxes
                 .get(dep.1)
-                .ok_or(Jam::nonexistent_dep_err(dep.1))?;
+                .ok_or(anyhow!("reference to nonexistent dep: {}", dep.1))?;
             dag.add_edge(*dependee_idx, *dependent_idx, 0)
                 .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
             debug!(logger, "linked dependency"; o!("from" => dep.0, "to" => dep.1));
@@ -244,7 +250,7 @@ impl<'a> Jam<'a> {
     fn validate_target_cfg(
         cfg: &DesugaredTargetCfg,
         node_idxes: &HashMap<&str, NodeIdx>,
-    ) -> anyhow::Result<()> {
+    ) -> ParseResult<()> {
         if cfg.name.is_empty() {
             bail!("cannot have an empty target name")
         } else if cfg.name.contains('.') {
@@ -310,13 +316,13 @@ impl<'a> Jam<'a> {
                 }
                 Err(err) => {
                     info!(logger, "failed to execute target");
-                    return Err(JamExecError::Executor {
+                    return Err(ExecError::Executor {
                         description: err.to_string(),
                     });
                 }
             }
         } else if num_deps_execed <= 0 {
-            return Err(JamExecError::CannotExec {
+            return Err(ExecError::CannotExec {
                 name: target.name.to_string(),
             });
         }
@@ -343,7 +349,7 @@ impl<'a> Jam<'a> {
                         // conflicts. If it has none, then the user
                         // should just specify the tail.
                         if nidxes.len() <= 1 {
-                            return Err(JamExecError::NotFound {
+                            return Err(ExecError::NotFound {
                                 shortcut: Shortcut::from(shortcut),
                             });
                         }
@@ -361,7 +367,7 @@ impl<'a> Jam<'a> {
                         ) {
                             Ok(keys) => keys,
                             Err(err) => {
-                                return Err(JamExecError::Reconciliation {
+                                return Err(ExecError::Reconciliation {
                                     description: err.to_string(),
                                 });
                             }
@@ -379,7 +385,7 @@ impl<'a> Jam<'a> {
                             // If it isn't there, then this reconciliation
                             // key is not a good one and we should error.
                             None => {
-                                return Err(JamExecError::NotFound {
+                                return Err(ExecError::NotFound {
                                     shortcut: Shortcut::from(shortcut),
                                 });
                             }
@@ -393,7 +399,7 @@ impl<'a> Jam<'a> {
                         target_idxes = vec![nidx];
                     }
                     None => {
-                        return Err(JamExecError::NotFound {
+                        return Err(ExecError::NotFound {
                             shortcut: Shortcut::from(shortcut),
                         });
                     }
@@ -407,7 +413,7 @@ impl<'a> Jam<'a> {
         info!(self.logger, "executing");
         let target_idxes = self.get_idxes(&shortcut)?;
         if target_idxes.len() > 1 {
-            return Err(JamExecError::Ambiguous {
+            return Err(ExecError::Ambiguous {
                 shortcut,
                 conflict_msg: target_idxes
                     .iter()
@@ -419,7 +425,7 @@ impl<'a> Jam<'a> {
         if let Some(nidx) = target_idxes.first() {
             self.execute_target(&self.logger, *nidx, 0)
         } else {
-            Err(JamExecError::NotFound { shortcut })
+            Err(ExecError::NotFound { shortcut })
         }
     }
 }
