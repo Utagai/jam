@@ -390,6 +390,7 @@ mod tests {
 
         use crate::config::{Config, TargetCfg};
         use slog::*;
+        use slog_term::TestStdoutWriter;
 
         use crate::config::Options;
         use crate::log::Level;
@@ -435,7 +436,7 @@ mod tests {
         }
 
         fn test_logger() -> slog::Logger {
-            let decorator = slog_term::TermDecorator::new().build();
+            let decorator = slog_term::PlainSyncDecorator::new(TestStdoutWriter);
             let drain = slog_term::CompactFormat::new(decorator).build();
             let drain = std::sync::Mutex::new(drain).fuse();
             slog::Logger::root(drain, o!())
