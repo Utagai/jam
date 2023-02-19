@@ -2,18 +2,18 @@
 use std::fs::File;
 
 use clap::Parser;
-
 use config::Config;
-use jam::{Jam, Shortcut};
 use slog::{debug, info, Record, KV};
 
-use crate::executor::Executor;
+use executor::Executor;
+use jam::{Jam, Shortcut};
 
 mod config;
 mod executor;
 mod jam;
 mod log;
 mod reconciler;
+mod tui;
 
 /// J̲am (isn't) A̲nother M̲ake.
 /// A task runner.
@@ -48,6 +48,7 @@ impl KV for Cli {
 }
 
 fn main() -> anyhow::Result<()> {
+    tui::tui();
     let config_path = "./rsrc/simple.yaml";
     let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
 
