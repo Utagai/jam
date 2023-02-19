@@ -62,15 +62,25 @@ fn run_app<B: Backend>(
                     }
                 }
 
-                if let KeyCode::Char(key) = key.code {
-                    if app.jam.next_keys(&app.prefix).contains(&key) {
-                        app.append(key);
-                        if app.jam.has(&app.prefix) && app.prefix.len() > 1 {
+                match key.code {
+                    KeyCode::Char('.') => {
+                        if app.jam.has(&app.prefix) {
                             return Ok(app.prefix);
+                        } else {
+                            println!("NO CMD YET!");
                         }
-                    } else {
-                        println!("IGNORING BAD KEY!");
                     }
+                    KeyCode::Char(key) => {
+                        if app.jam.next_keys(&app.prefix).contains(&key) {
+                            app.append(key);
+                            if app.jam.has(&app.prefix) && app.prefix.len() > 1 {
+                                return Ok(app.prefix);
+                            }
+                        } else {
+                            println!("IGNORING BAD KEY!");
+                        }
+                    }
+                    _ => todo!(),
                 }
             }
         }
