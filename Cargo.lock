@@ -404,6 +404,7 @@ dependencies = [
  "slog-term",
  "strum",
  "strum_macros",
+ "thiserror",
  "tui",
 ]
 
