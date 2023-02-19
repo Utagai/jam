@@ -72,13 +72,10 @@ impl Shortcut {
     }
 
     // NOTE: Same thing as described for append() above is worth considering here.
-    pub fn tail(&self) -> (Shortcut, char) {
+    pub fn tail(&self) -> (Shortcut, Option<char>) {
         let mut new_vec = self.0.clone();
         let key = new_vec.pop();
-        (
-            Shortcut(new_vec),
-            key.expect("tail called for empty shortcut"),
-        )
+        (Shortcut(new_vec), key)
     }
 
     pub fn len(&self) -> usize {
@@ -352,7 +349,7 @@ impl<'a> Jam<'a> {
 
                         let nidx = match reconciliation_keys
                             .iter()
-                            .position(|reconciliation_key| reconciliation_key == &key)
+                            .position(|reconciliation_key| Some(reconciliation_key) == key.as_ref())
                         {
                             // If it isn't there, then this reconciliation
                             // key is not a good one and we should error.
