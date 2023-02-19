@@ -28,7 +28,7 @@ impl<'a> App<'a> {
     fn new(jam: &'a Jam<'a>) -> App<'a> {
         App {
             jam,
-            prefix: Shortcut(vec![]),
+            prefix: Shortcut::empty(),
         }
     }
 
@@ -58,7 +58,7 @@ fn run_app<B: Backend>(
                 // you press CTRL+C.
                 if key.modifiers == KeyModifiers::CONTROL {
                     if let KeyCode::Char('c') = key.code {
-                        return Ok(Shortcut(vec![]));
+                        return Ok(Shortcut::empty());
                     }
                 }
 

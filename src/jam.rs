@@ -77,7 +77,7 @@ impl Shortcut {
         let key = new_vec.pop();
         (
             Shortcut(new_vec),
-            key.expect("found an empty shortcut, but this should not be possible"),
+            key.expect("tail called for empty shortcut"),
         )
     }
 }
@@ -255,11 +255,6 @@ impl<'a> Jam<'a> {
     pub fn keys(&self, prefix: &Shortcut) -> Vec<char> {
         let mut keys: Vec<char> = self
             .shortcuts
-            // TODO: We need to get a better understanding of what
-            // keys are getting put into the trie by the parsing stage
-            // and how that leads to this behaving the way it does. It
-            // isn't even clear to me if this implementation is
-            // correct.
             .subtrie(&prefix)
             .unwrap()
             .keys()
@@ -269,7 +264,6 @@ impl<'a> Jam<'a> {
             // Option<&T> -> Option<T>. Who knows.
             .map(|k| *k)
             .collect();
-        // TODO: Yeah... bruh.
         keys.sort_unstable();
         keys.dedup();
         return keys;
