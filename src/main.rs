@@ -48,7 +48,6 @@ impl KV for Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    tui::tui();
     let config_path = "./rsrc/simple.yaml";
     let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
 
@@ -72,5 +71,9 @@ fn main() -> anyhow::Result<()> {
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");
 
-    jam.execute(Shortcut(cli.shortcut))
+    let shortcut = tui::render(&jam)?;
+
+    // TODO: We need to handle cli.shortcut vs. interactive shortcut,
+    // right now we're ignoring CLI.
+    jam.execute(shortcut)
 }

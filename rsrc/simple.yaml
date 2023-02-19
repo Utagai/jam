@@ -24,6 +24,6 @@ targets:
     targets:
       - name: "corge"
         help: "runs the baz command, duh"
-        cmd: "echo 'baz'"
+        cmd: "printf '\n\n!!!!\n\nran the n-c command!\n\n!!!!\n\n'"
       - name: "delta"
         cmd: "echo 'bam'"

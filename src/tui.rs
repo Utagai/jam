@@ -3,32 +3,38 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::Alignment,
     style::{Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 
-struct App {
-    scroll: u16,
+use crate::jam::{Jam, Shortcut};
+
+struct App<'a> {
+    jam: &'a Jam<'a>,
+    prefix: Shortcut,
 }
 
-impl App {
-    fn new() -> App {
-        App { scroll: 0 }
+impl<'a> App<'a> {
+    fn new(jam: &'a Jam<'a>) -> App<'a> {
+        App {
+            jam,
+            // TODO: Helper for empty shortcut?
+            prefix: Shortcut(vec![]),
+        }
     }
 
-    fn on_tick(&mut self) {
-        self.scroll += 1;
-        self.scroll %= 10;
+    fn append(&mut self, key: char) {
+        self.prefix = self.prefix.append(&key)
     }
 }
 
@@ -36,9 +42,12 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
     tick_rate: Duration,
-) -> io::Result<()> {
+) -> io::Result<Shortcut> {
     let mut last_tick = Instant::now();
     loop {
+        // Does the actual drawing of the UI!
+        // Note that we make a _call_ to ui() here, we are re-creating
+        // the UI each and every time.
         terminal.draw(|f| ui(f, &app))?;
 
         let timeout = tick_rate
@@ -46,13 +55,38 @@ fn run_app<B: Backend>(
             .unwrap_or_else(|| Duration::from_secs(0));
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
+                // This code here is what exits the application when
+                // you press CTRL+C.
+                if key.modifiers == KeyModifiers::CONTROL {
+                    if let KeyCode::Char('c') = key.code {
+                        // TODO: We should not be returning an empty
+                        // shortcut here I think... but maybe it is
+                        // OK? Feel free to remove this comment, IDK.
+                        return Ok(Shortcut(vec![]));
+                    }
+                }
+
+                if let KeyCode::Char(key) = key.code {
+                    // TODO: App should probably cache the value of
+                    // keys() instead of calling it on every key
+                    // press.
+                    if app.jam.keys(&app.prefix).contains(&key) {
+                        app.append(key);
+                        // TODO: Yea this is dumb...
+                        if app.jam.has(&app.prefix) && app.prefix.0.len() > 1 {
+                            return Ok(app.prefix);
+                        }
+                    } else {
+                        // TODO: Obviously we are gonna have to do something about this.
+                        println!("IGNORING BAD KEY!");
+                    }
                 }
             }
         }
+
+        // Basically, when a tick has transpired, run on_tick().
+        // I think the if statement is to be safe but idk for sure.
         if last_tick.elapsed() >= tick_rate {
-            app.on_tick();
             last_tick = Instant::now();
         }
     }
@@ -61,58 +95,52 @@ fn run_app<B: Backend>(
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let size = f.size();
 
-    let block = Block::default().style(Style::default());
-    f.render_widget(block, size);
+    // Text to show in paragraph.
+    let lines = app
+        .jam
+        .keys(&app.prefix)
+        .iter()
+        .map(|k| Spans::from(format!("key: {}", k)))
+        .collect::<Vec<Spans>>();
 
-    let text = vec![
-        Spans::from("This is a line "),
-        Spans::from("This is a line "),
-        Spans::from(format!("This is a line {}", app.scroll)),
-        Spans::from("This is a line "),
-    ];
+    let block = Block::default().borders(Borders::ALL).title(Span::styled(
+        "jam",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
 
-    let create_block = |title| {
-        Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default())
-            .title(Span::styled(
-                title,
-                Style::default().add_modifier(Modifier::BOLD),
-            ))
-    };
-    let paragraph = Paragraph::new(text)
-        .style(Style::default())
-        .block(create_block("jam"))
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
+    let paragraph = Paragraph::new(lines).block(block);
+
+    // UI is simple. We have a block (think div or span), then inside
+    // it is a paragraph. The block has some styling like borders and
+    // a title.
+    // The paragraph just has default style and left-alignment and trimed wrapping.
+    // This call below draws it onto the term.
     f.render_widget(paragraph, size);
 }
 
-pub fn tui() -> Result<(), Box<dyn std::error::Error>> {
-    // setup terminal
+pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
+    // Bookkeeping stuff (setup):
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
+    // TODO: Basically we want the thing that prints the UI to stdout
+    // and leaves our logs to stderr untouched.
+    let mut stderr = io::stderr();
+    execute!(stderr, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stderr);
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(250);
-    let app = App::new();
-    let res = run_app(&mut terminal, app, tick_rate);
+    let tick_rate = Duration::from_millis(500);
+    // Create new 'app'. Really, this is just a bag of state to carry across 'ticks'.
+    // Each tick is basically an entire refresh of the UI (see above 'tick_rate').
+    let app = App::new(jam);
+    // Run app runs the tick loop that constantly refreshes the loop based on tick_rate.
+    // It relies on the ui() function to recreate the UI. The UI takes app to help it decide what to draw.
+    let res = run_app(&mut terminal, app, tick_rate)?;
 
-    // restore terminal
+    // Bookkeeping stuff (cleanup):
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err)
-    }
-
-    Ok(())
+    Ok(res)
 }

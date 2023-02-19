@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::from_utf8};
 
 use anyhow::{anyhow, bail, Result};
 use daggy::{Dag, NodeIndex, Walker};
-use radix_trie::{Trie, TrieKey};
+use radix_trie::{Trie, TrieCommon, TrieKey};
 use slog::{debug, info, o};
 
 use crate::{
@@ -247,6 +247,38 @@ impl<'a> Jam<'a> {
 
     fn cannot_exec_cmd(target: &Target) -> anyhow::Error {
         anyhow!("target '{}' has no executable function", target.name)
+    }
+
+    pub fn keys(&self, prefix: &Shortcut) -> Vec<char> {
+        let mut keys: Vec<char> = self
+            .shortcuts
+            // TODO: We need to get a better understanding of what
+            // keys are getting put into the trie by the parsing stage
+            // and how that leads to this behaving the way it does. It
+            // isn't even clear to me if this implementation is
+            // correct.
+            .subtrie(&prefix)
+            .unwrap()
+            .keys()
+            .filter_map(|k| k.0.get(prefix.0.len()))
+            // TODO: I have a feeling that we don't need this *k map
+            // and we can use some method on Option that lets us turn
+            // Option<&T> -> Option<T>. Who knows.
+            .map(|k| *k)
+            .collect();
+        // TODO: Yeah... bruh.
+        keys.sort_unstable();
+        keys.dedup();
+        return keys;
+    }
+
+    // TODO: Do we actually need a method like this?
+    pub fn has(&self, shortcut: &Shortcut) -> bool {
+        if let Ok(idxes) = self.get_idxes(shortcut) {
+            return idxes.len() == 1;
+        }
+
+        return false;
     }
 
     fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> Result<()> {
