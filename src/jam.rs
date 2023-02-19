@@ -47,11 +47,14 @@ pub struct Jam<'a> {
 pub struct Shortcut(pub Vec<char>);
 
 impl Shortcut {
+    pub fn empty() -> Shortcut {
+        Shortcut(vec![])
+    }
+
     fn from_shortcut_str(shortcut_str: &str) -> Shortcut {
         Shortcut(
             shortcut_str
                 .split('-')
-                // TODO: This requires validation...
                 .map(|s| s.chars().nth(0).unwrap())
                 .collect(),
         )
@@ -272,7 +275,6 @@ impl<'a> Jam<'a> {
         return keys;
     }
 
-    // TODO: Do we actually need a method like this?
     pub fn has(&self, shortcut: &Shortcut) -> bool {
         if let Ok(idxes) = self.get_idxes(shortcut) {
             return idxes.len() == 1;

@@ -28,7 +28,6 @@ impl<'a> App<'a> {
     fn new(jam: &'a Jam<'a>) -> App<'a> {
         App {
             jam,
-            // TODO: Helper for empty shortcut?
             prefix: Shortcut(vec![]),
         }
     }
@@ -59,25 +58,17 @@ fn run_app<B: Backend>(
                 // you press CTRL+C.
                 if key.modifiers == KeyModifiers::CONTROL {
                     if let KeyCode::Char('c') = key.code {
-                        // TODO: We should not be returning an empty
-                        // shortcut here I think... but maybe it is
-                        // OK? Feel free to remove this comment, IDK.
                         return Ok(Shortcut(vec![]));
                     }
                 }
 
                 if let KeyCode::Char(key) = key.code {
-                    // TODO: App should probably cache the value of
-                    // keys() instead of calling it on every key
-                    // press.
                     if app.jam.keys(&app.prefix).contains(&key) {
                         app.append(key);
-                        // TODO: Yea this is dumb...
                         if app.jam.has(&app.prefix) && app.prefix.0.len() > 1 {
                             return Ok(app.prefix);
                         }
                     } else {
-                        // TODO: Obviously we are gonna have to do something about this.
                         println!("IGNORING BAD KEY!");
                     }
                 }
@@ -121,8 +112,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
-    // TODO: Basically we want the thing that prints the UI to stdout
-    // and leaves our logs to stderr untouched.
     let mut stderr = io::stderr();
     execute!(stderr, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stderr);
