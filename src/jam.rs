@@ -276,11 +276,10 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
-        info!(self.logger, "executing");
+    fn get_idxes(&self, shortcut: &Shortcut) -> Result<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
-        match shortcuts_ref.get(&shortcut) {
+        match shortcuts_ref.get(shortcut) {
             Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
             None => {
                 debug!(self.logger, "found ambiguity, attempting reconciliation");
@@ -332,6 +331,12 @@ impl<'a> Jam<'a> {
                 }
             }
         };
+        Ok(target_idxes)
+    }
+
+    pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
+        info!(self.logger, "executing");
+        let target_idxes = self.get_idxes(&shortcut)?;
         if target_idxes.len() > 1 {
             return Err(self.ambiguous_shortcut(&shortcut, &target_idxes));
         }
