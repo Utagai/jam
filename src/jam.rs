@@ -392,6 +392,7 @@ mod tests {
         use slog::*;
 
         use crate::config::Options;
+        use crate::log::Level;
 
         impl<'a> Jam<'a> {
             fn node_has_target(&self, target_name: &str) -> Option<NodeIdx> {
@@ -448,6 +449,7 @@ mod tests {
             let cfg = Config {
                 options: Options {
                     reconciliation_strategy: crate::reconciler::Strategy::Error,
+                    log_level: Some(Level::Disabled),
                 },
                 targets,
             }

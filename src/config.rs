@@ -218,6 +218,7 @@ impl Config {
         Config {
             options: Options {
                 reconciliation_strategy: reconciler::Strategy::Error,
+                log_level: Some(log::Level::Disabled),
             },
             targets,
         }
@@ -261,6 +262,7 @@ mod tests {
             DesugaredConfig {
                 options: Options {
                     reconciliation_strategy: reconciler::Strategy::Error,
+                    log_level: Some(log::Level::Disabled),
                 },
                 targets,
             }
