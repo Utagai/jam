@@ -260,30 +260,6 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    fn nonexistent_dep_err<T: AsRef<str> + std::fmt::Display>(dep_name: T) -> anyhow::Error {
-        anyhow!("reference to nonexistent dep: {}", dep_name)
-    }
-
-    fn no_cmd_for_shortcut(shortcut: &Shortcut) -> anyhow::Error {
-        anyhow!("no command for given shortcut: '{}'", shortcut)
-    }
-
-    fn ambiguous_shortcut(&self, shortcut: &Shortcut, nidxes: &[NodeIdx]) -> anyhow::Error {
-        anyhow!(
-            "given shortcut '{}' is ambiguous (i.e. is it {}?)",
-            shortcut,
-            nidxes
-                .iter()
-                .map(|nidx| format!("'{}'", self.dag[*nidx].name))
-                .collect::<Vec<String>>()
-                .join(" or "),
-        )
-    }
-
-    fn cannot_exec_cmd(target: &Target) -> anyhow::Error {
-        anyhow!("target '{}' has no executable function", target.name)
-    }
-
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let mut keys: Vec<char> = self
             .shortcuts
