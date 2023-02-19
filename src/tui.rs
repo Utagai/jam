@@ -73,7 +73,8 @@ fn run_app<B: Backend>(
                     KeyCode::Char(key) => {
                         if app.jam.next_keys(&app.prefix).contains(&key) {
                             app.append(key);
-                            if app.jam.has(&app.prefix) && app.prefix.len() > 1 {
+                            if app.jam.has(&app.prefix) && app.jam.next_keys(&app.prefix).len() == 0
+                            {
                                 return Ok(app.prefix);
                             }
                         } else {
@@ -122,9 +123,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
-    let mut stderr = io::stderr();
-    execute!(stderr, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stderr);
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
