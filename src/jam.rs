@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::HashMap, fmt::write, str::from_utf8};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
@@ -89,6 +89,12 @@ impl Shortcut {
     }
 }
 
+impl From<&Self> for Shortcut {
+    fn from(value: &Self) -> Self {
+        Shortcut(value.0.clone())
+    }
+}
+
 impl PartialEq for Shortcut {
     fn eq(&self, other: &Self) -> bool {
         self.0
@@ -125,53 +131,22 @@ impl TrieKey for Shortcut {
 
 #[derive(Error, Debug)]
 pub enum JamExecError {
+    #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
     Ambiguous {
         shortcut: Shortcut,
-        nidxes: Vec<String>,
+        conflict_msg: String,
     },
-    NotFound {
-        shortcut: Shortcut,
-    },
-    CannotExec {
-        name: String,
-    },
-    Reconciliation {
-        description: String,
-    },
-    Executor {
-        description: String,
-    },
+    #[error("no command for given shortcut '{shortcut}'")]
+    NotFound { shortcut: Shortcut },
+    #[error("target '{name}' has no executable function")]
+    CannotExec { name: String },
+    #[error("{description}")]
+    Reconciliation { description: String },
+    #[error("{description}")]
+    Executor { description: String },
 }
 
 type ExecResult<T> = Result<T, JamExecError>;
-
-// TODO: I think we can replace this with #[error()] derives above.
-impl fmt::Display for JamExecError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Ambiguous { shortcut, nidxes } => {
-                write!(
-                    f,
-                    "given shortcut '{}' is ambiguous (i.e. is it {}?)",
-                    shortcut,
-                    nidxes.join(" or ")
-                )
-            }
-            Self::CannotExec { name } => {
-                write!(f, "target '{}' has no executable function", name)
-            }
-            Self::NotFound { shortcut } => {
-                write!(f, "no command for given shortcut: '{}'", shortcut)
-            }
-            Self::Reconciliation { description } => {
-                write!(f, "{}", description)
-            }
-            Self::Executor { description } => {
-                write!(f, "{}", description)
-            }
-        }
-    }
-}
 
 impl<'a> Jam<'a> {
     pub fn new(
@@ -329,7 +304,7 @@ impl<'a> Jam<'a> {
         return keys;
     }
 
-    pub fn has(&self, shortcut: &Shortcut) -> bool {
+    pub fn lookup(&self, shortcut: &Shortcut) -> bool {
         if let Ok(idxes) = self.get_idxes(shortcut) {
             return idxes.len() == 1;
         }
@@ -360,13 +335,13 @@ impl<'a> Jam<'a> {
                 Err(err) => {
                     info!(logger, "failed to execute target");
                     return Err(JamExecError::Executor {
-                        description: format!("{}", err),
+                        description: err.to_string(),
                     });
                 }
             }
         } else if num_deps_execed <= 0 {
             return Err(JamExecError::CannotExec {
-                name: target.name.to_string(), // TODO: Clone
+                name: target.name.to_string(),
             });
         }
         Ok(())
@@ -393,7 +368,7 @@ impl<'a> Jam<'a> {
                         // should just specify the tail.
                         if nidxes.len() <= 1 {
                             return Err(JamExecError::NotFound {
-                                shortcut: shortcut.clone(), // TODO: Clone
+                                shortcut: Shortcut::from(shortcut),
                             });
                         }
 
@@ -412,7 +387,7 @@ impl<'a> Jam<'a> {
                             Err(err) => {
                                 return Err(JamExecError::Reconciliation {
                                     description: err.to_string(),
-                                })
+                                });
                             }
                         };
 
@@ -429,7 +404,7 @@ impl<'a> Jam<'a> {
                             // key is not a good one and we should error.
                             None => {
                                 return Err(JamExecError::NotFound {
-                                    shortcut: shortcut.clone(), // TODO: Clone
+                                    shortcut: Shortcut::from(shortcut),
                                 });
                             }
                             // However, and finally, if it is good, then
@@ -443,7 +418,7 @@ impl<'a> Jam<'a> {
                     }
                     None => {
                         return Err(JamExecError::NotFound {
-                            shortcut: shortcut.clone(), // TODO: Clone
+                            shortcut: Shortcut::from(shortcut),
                         });
                     }
                 }
@@ -458,10 +433,11 @@ impl<'a> Jam<'a> {
         if target_idxes.len() > 1 {
             return Err(JamExecError::Ambiguous {
                 shortcut,
-                nidxes: target_idxes
+                conflict_msg: target_idxes
                     .iter()
-                    .map(|idx| self.dag[*idx].name.to_string())
-                    .collect(),
+                    .map(|idx| String::from(self.dag[*idx].name))
+                    .collect::<Vec<String>>()
+                    .join(" or "),
             });
         }
         if let Some(nidx) = target_idxes.first() {
