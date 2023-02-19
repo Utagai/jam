@@ -33,7 +33,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 }
 
 type IdxT = u32;
-type NodeIdx = NodeIndex<IdxT>;
+pub type NodeIdx = NodeIndex<IdxT>;
 pub type ShortcutTrie = Trie<Shortcut, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
@@ -153,6 +153,14 @@ pub enum ExecError {
 // errors.
 type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 type ExecResult<T> = Result<T, ExecError>;
+
+#[derive(Debug, PartialEq)]
+pub enum Lookup {
+    NotFound,
+    Found,
+    ReconciliationFailure, // TODO: Probably should include the error message here...
+    Conflict,
+}
 
 impl<'a> Jam<'a> {
     pub fn new(
@@ -286,12 +294,25 @@ impl<'a> Jam<'a> {
         return keys;
     }
 
-    pub fn lookup(&self, shortcut: &Shortcut) -> bool {
-        if let Ok(idxes) = self.get_idxes(shortcut) {
-            return idxes.len() == 1;
+    pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
+        match self.get_idxes(shortcut) {
+            Ok(idxes) => {
+                if idxes.len() == 0 {
+                    Lookup::NotFound
+                } else if idxes.len() == 1 {
+                    Lookup::Found
+                } else {
+                    // Multiple.
+                    Lookup::Conflict
+                }
+            }
+            Err(ExecError::Ambiguous {
+                shortcut: _,
+                conflict_msg: _,
+            }) => Lookup::Conflict,
+            Err(ExecError::Reconciliation { description: _ }) => Lookup::ReconciliationFailure,
+            Err(_) => Lookup::NotFound,
         }
-
-        return false;
     }
 
     fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> ExecResult<()> {
@@ -359,19 +380,7 @@ impl<'a> Jam<'a> {
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
                         // reconciliation key is a valid one:
-                        let reconciliation_keys = match reconcile(
-                            self.opts.reconciliation_strategy,
-                            &self.shortcuts,
-                            &nidxes.iter().map(|nidx| self.dag[*nidx].name).collect(),
-                            &shortcut,
-                        ) {
-                            Ok(keys) => keys,
-                            Err(err) => {
-                                return Err(ExecError::Reconciliation {
-                                    description: err.to_string(),
-                                });
-                            }
-                        };
+                        let reconciliation_keys = self.reconcile(&tail)?;
 
                         // The returned reconciliation keys are 1:1
                         // with the node indexes. i.e., the
@@ -407,6 +416,26 @@ impl<'a> Jam<'a> {
             }
         };
         Ok(target_idxes)
+    }
+
+    pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
+        // TODO: This is not performant and is technically not
+        // necessary in the Jam codepath, it is only necessary in the
+        // TUI one.
+        let nidxes = self.shortcuts.get(shortcut).unwrap();
+        match reconcile(
+            self.opts.reconciliation_strategy,
+            &self.shortcuts,
+            &nidxes.iter().map(|nidx| self.dag[*nidx].name).collect(),
+            shortcut,
+        ) {
+            Ok(keys) => Ok(keys),
+            Err(err) => {
+                return Err(ExecError::Reconciliation {
+                    description: err.to_string(),
+                });
+            }
+        }
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {

@@ -17,23 +17,61 @@ use tui::{
     Frame, Terminal,
 };
 
-use crate::jam::{Jam, Shortcut};
+use crate::jam::{Jam, Lookup, NodeIdx, Shortcut};
 
 struct App<'a> {
     jam: &'a Jam<'a>,
     prefix: Shortcut,
+    // TODO: I think we gotta find a cleaner way to do handle this
+    // state... maybe? IDK... I would hope we can do that... maybe we
+    // can merge these two? IDK.
+    cached_next: Vec<char>,
+    reconciled: Option<Vec<char>>,
 }
 
 impl<'a> App<'a> {
     fn new(jam: &'a Jam<'a>) -> App<'a> {
+        let initial_prefix = Shortcut::empty();
+        let next_keys = jam.next_keys(&initial_prefix);
         App {
             jam,
-            prefix: Shortcut::empty(),
+            prefix: initial_prefix,
+            cached_next: next_keys,
+            reconciled: None,
         }
     }
 
     fn append(&mut self, key: char) {
-        self.prefix = self.prefix.append(&key)
+        self.prefix = self.prefix.append(&key);
+        if self.reconciled.is_none() {
+            self.cached_next = self.jam.next_keys(&self.prefix)
+        }
+    }
+
+    fn next_keys(&self) -> &Vec<char> {
+        // If we have a reconciliation result waiting, then that
+        // always takes priority, since it means we are at the end of
+        // a chain.
+        if let Some(reconciled) = &self.reconciled {
+            return reconciled;
+        }
+        &self.cached_next
+    }
+
+    fn reconcile(&mut self) {
+        self.reconciled = Some(
+            self.jam
+                .reconcile(&self.prefix)
+                .expect("failed to reconcile"),
+        )
+    }
+
+    fn is_reconciliation_key(&self, key: char) -> bool {
+        if let Some(reconciled) = &self.reconciled {
+            return reconciled.contains(&key);
+        }
+
+        false
     }
 }
 
@@ -62,26 +100,66 @@ fn run_app<B: Backend>(
                     }
                 }
 
-                match key.code {
-                    KeyCode::Char('.') => {
-                        if app.jam.has(&app.prefix) {
-                            return Ok(app.prefix);
-                        } else {
-                            println!("NO CMD YET!");
-                        }
-                    }
+                enum Response {
+                    Execute,
+                    Reconcile,
+                    Request,
+                    Error(String),
+                }
+
+                let resp = match key.code {
+                    KeyCode::Char('.') => match app.jam.lookup(&app.prefix) {
+                        Lookup::Found => Response::Execute,
+                        Lookup::Conflict => Response::Reconcile,
+                        _ => Response::Error(format!(
+                            // TODO: Do we need to handle reconciliation failure here?
+                            "NO CMD YET!: {:?}",
+                            app.jam.lookup(&app.prefix)
+                        )),
+                    },
                     KeyCode::Char(key) => {
-                        if app.jam.next_keys(&app.prefix).contains(&key) {
+                        // TODO: This feels kind of unclean, not sure.
+                        // I wonder if we should make some kinda state machine like solution IDK really.
+                        if app.is_reconciliation_key(key) {
                             app.append(key);
-                            if app.jam.has(&app.prefix) && app.jam.next_keys(&app.prefix).len() == 0
-                            {
-                                return Ok(app.prefix);
+                            Response::Execute
+                        } else if app.next_keys().contains(&key) {
+                            app.append(key);
+                            let is_leaf = app.next_keys().len() == 0;
+                            match app.jam.lookup(&app.prefix) {
+                                Lookup::Found => {
+                                    if is_leaf {
+                                        Response::Execute
+                                    } else {
+                                        Response::Request
+                                    }
+                                }
+                                Lookup::Conflict => {
+                                    if is_leaf {
+                                        Response::Reconcile
+                                    } else {
+                                        Response::Request
+                                    }
+                                }
+                                _ => {
+                                    // TODO: Ditto about handling other failures.
+                                    Response::Error(String::from("UH OH ERROR ON NORMAL KEY PRESS"))
+                                }
                             }
                         } else {
-                            println!("IGNORING BAD KEY!");
+                            Response::Error(String::from("IGNORING BAD KEY!"))
                         }
                     }
-                    _ => todo!(),
+                    _ => todo!(), // TODO: Handle?
+                };
+
+                match resp {
+                    Response::Execute => return Ok(app.prefix),
+                    Response::Request => continue,
+                    Response::Error(msg) => {
+                        println!("ERROR: {}", msg);
+                    }
+                    Response::Reconcile => app.reconcile(),
                 }
             }
         }
@@ -99,8 +177,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     // Text to show in paragraph.
     let lines = app
-        .jam
-        .next_keys(&app.prefix)
+        .next_keys()
         .iter()
         .map(|k| Spans::from(format!("key: {}", k)))
         .collect::<Vec<Spans>>();

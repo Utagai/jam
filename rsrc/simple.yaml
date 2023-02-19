@@ -11,13 +11,18 @@ targets:
     targets:
       - name: "baz"
         help: "runs the baz command, duh"
-        cmd: "echo 'just ran bar-baz! with '$SHELL"
+        cmd: "echo 'just ran alpha-baz! with '$SHELL"
       - name: "qux"
         cmd: "echo 'bam'"
         deps:
           - "foo"
   - name: "ambiguous"
     cmd: "echo 'foo'"
+    targets:
+      - name: "delta"
+        cmd: "echo 'ambiguous-delta'"
+      - name: "bark"
+        cmd: "echo 'ambiguous-bark'"
   - name: "bar"
     cmd: "echo 'bar'"
   - name: "nocmd"
