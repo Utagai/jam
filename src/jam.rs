@@ -1,9 +1,11 @@
-use std::{collections::HashMap, str::from_utf8};
+use core::fmt;
+use std::{collections::HashMap, fmt::write, str::from_utf8};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
 use radix_trie::{Trie, TrieCommon, TrieKey};
 use slog::{debug, info, o};
+use thiserror::Error;
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
@@ -121,12 +123,62 @@ impl TrieKey for Shortcut {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum JamExecError {
+    Ambiguous {
+        shortcut: Shortcut,
+        nidxes: Vec<String>,
+    },
+    NotFound {
+        shortcut: Shortcut,
+    },
+    CannotExec {
+        name: String,
+    },
+    Reconciliation {
+        description: String,
+    },
+    Executor {
+        description: String,
+    },
+}
+
+type ExecResult<T> = Result<T, JamExecError>;
+
+// TODO: I think we can replace this with #[error()] derives above.
+impl fmt::Display for JamExecError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ambiguous { shortcut, nidxes } => {
+                write!(
+                    f,
+                    "given shortcut '{}' is ambiguous (i.e. is it {}?)",
+                    shortcut,
+                    nidxes.join(" or ")
+                )
+            }
+            Self::CannotExec { name } => {
+                write!(f, "target '{}' has no executable function", name)
+            }
+            Self::NotFound { shortcut } => {
+                write!(f, "no command for given shortcut: '{}'", shortcut)
+            }
+            Self::Reconciliation { description } => {
+                write!(f, "{}", description)
+            }
+            Self::Executor { description } => {
+                write!(f, "{}", description)
+            }
+        }
+    }
+}
+
 impl<'a> Jam<'a> {
     pub fn new(
         logger: &slog::Logger,
         executor: Executor,
         cfg: &'a DesugaredConfig,
-    ) -> Result<Jam<'a>> {
+    ) -> anyhow::Result<Jam<'a>> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
@@ -217,7 +269,7 @@ impl<'a> Jam<'a> {
     fn validate_target_cfg(
         cfg: &DesugaredTargetCfg,
         node_idxes: &HashMap<&str, NodeIdx>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         if cfg.name.is_empty() {
             bail!("cannot have an empty target name")
         } else if cfg.name.contains('.') {
@@ -285,7 +337,7 @@ impl<'a> Jam<'a> {
         return false;
     }
 
-    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> Result<()> {
+    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> ExecResult<()> {
         let target = &self.dag[nidx];
         info!(
             logger,
@@ -301,18 +353,26 @@ impl<'a> Jam<'a> {
         }
         if let Some(cmd) = target.cmd {
             info!(logger, "running executor"; o!("cmd" => cmd));
-            if self.executor.execute(target.execute_kind, cmd)? {
-                info!(logger, "successfully executed target");
-            } else {
-                info!(logger, "failed to execute target");
+            match self.executor.execute(target.execute_kind, cmd) {
+                Ok(_) => {
+                    info!(logger, "successfully executed target");
+                }
+                Err(err) => {
+                    info!(logger, "failed to execute target");
+                    return Err(JamExecError::Executor {
+                        description: format!("{}", err),
+                    });
+                }
             }
         } else if num_deps_execed <= 0 {
-            bail!(Jam::cannot_exec_cmd(target))
+            return Err(JamExecError::CannotExec {
+                name: target.name.to_string(), // TODO: Clone
+            });
         }
         Ok(())
     }
 
-    fn get_idxes(&self, shortcut: &Shortcut) -> Result<Vec<NodeIdx>> {
+    fn get_idxes(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
         match shortcuts_ref.get(shortcut) {
@@ -332,7 +392,9 @@ impl<'a> Jam<'a> {
                         // conflicts. If it has none, then the user
                         // should just specify the tail.
                         if nidxes.len() <= 1 {
-                            bail!(Jam::no_cmd_for_shortcut(&shortcut))
+                            return Err(JamExecError::NotFound {
+                                shortcut: shortcut.clone(), // TODO: Clone
+                            });
                         }
 
                         info!(self.logger, "reconciling with strategy"; o!("strategy" => self.opts.reconciliation_strategy.to_string()));
@@ -340,20 +402,36 @@ impl<'a> Jam<'a> {
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
                         // reconciliation key is a valid one:
-                        let reconciliation_keys = reconcile(
+                        let reconciliation_keys = match reconcile(
                             self.opts.reconciliation_strategy,
                             &self.shortcuts,
                             &nidxes.iter().map(|nidx| self.dag[*nidx].name).collect(),
                             &shortcut,
-                        )?;
+                        ) {
+                            Ok(keys) => keys,
+                            Err(err) => {
+                                return Err(JamExecError::Reconciliation {
+                                    description: err.to_string(),
+                                })
+                            }
+                        };
 
+                        // The returned reconciliation keys are 1:1
+                        // with the node indexes. i.e., the
+                        // reconciliation key at index i is the
+                        // reconciliation key for the conflicting
+                        // target at index i in nidxes.
                         let nidx = match reconciliation_keys
                             .iter()
                             .position(|reconciliation_key| Some(reconciliation_key) == key.as_ref())
                         {
                             // If it isn't there, then this reconciliation
                             // key is not a good one and we should error.
-                            None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
+                            None => {
+                                return Err(JamExecError::NotFound {
+                                    shortcut: shortcut.clone(), // TODO: Clone
+                                });
+                            }
                             // However, and finally, if it is good, then
                             // let's identify which nidx we are looking at
                             // and return just that one:
@@ -363,23 +441,33 @@ impl<'a> Jam<'a> {
                         debug!(self.logger, "reconciled");
                         target_idxes = vec![nidx];
                     }
-                    None => bail!(Jam::no_cmd_for_shortcut(&shortcut)),
+                    None => {
+                        return Err(JamExecError::NotFound {
+                            shortcut: shortcut.clone(), // TODO: Clone
+                        });
+                    }
                 }
             }
         };
         Ok(target_idxes)
     }
 
-    pub fn execute(&self, shortcut: Shortcut) -> Result<()> {
+    pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
         info!(self.logger, "executing");
         let target_idxes = self.get_idxes(&shortcut)?;
         if target_idxes.len() > 1 {
-            return Err(self.ambiguous_shortcut(&shortcut, &target_idxes));
+            return Err(JamExecError::Ambiguous {
+                shortcut,
+                nidxes: target_idxes
+                    .iter()
+                    .map(|idx| self.dag[*idx].name.to_string())
+                    .collect(),
+            });
         }
         if let Some(nidx) = target_idxes.first() {
             self.execute_target(&self.logger, *nidx, 0)
         } else {
-            bail!(Jam::no_cmd_for_shortcut(&shortcut))
+            Err(JamExecError::NotFound { shortcut })
         }
     }
 }

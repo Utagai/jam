@@ -72,8 +72,10 @@ fn main() -> anyhow::Result<()> {
     info!(logger, "finished startup");
 
     let shortcut = tui::render(&jam)?;
+    // let shortcut = Shortcut(cli.shortcut);
 
     // TODO: We need to handle cli.shortcut vs. interactive shortcut,
     // right now we're ignoring CLI.
-    jam.execute(shortcut)
+    jam.execute(shortcut)?;
+    Ok(())
 }
