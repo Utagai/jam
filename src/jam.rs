@@ -56,7 +56,7 @@ impl Shortcut {
         Shortcut(
             shortcut_str
                 .split('-')
-                .map(|s| s.chars().nth(0).unwrap())
+                .map(|s| s.chars().next().unwrap())
                 .collect(),
         )
     }
@@ -277,7 +277,7 @@ impl<'a> Jam<'a> {
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let mut keys: Vec<char> = self
             .shortcuts
-            .subtrie(&prefix)
+            .subtrie(prefix)
             .unwrap()
             .keys()
             .filter_map(|k| k.get(prefix.len()).copied())
@@ -291,13 +291,13 @@ impl<'a> Jam<'a> {
         // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
         keys.sort_unstable();
         keys.dedup();
-        return keys;
+        keys
     }
 
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
         match self.get_idxes(shortcut) {
             Ok(idxes) => {
-                if idxes.len() == 0 {
+                if idxes.is_empty() {
                     Lookup::NotFound
                 } else if idxes.len() == 1 {
                     Lookup::Found
@@ -319,7 +319,7 @@ impl<'a> Jam<'a> {
         let target = &self.dag[nidx];
         info!(
             logger,
-            "{}", if depth <= 0 {"executing target"} else {"executing dependency"};
+            "{}", if depth == 0 {"executing target"} else {"executing dependency"};
             o!("name" => target.name, "depth" => depth)
         );
         let deps = self.dag.children(nidx);
@@ -426,15 +426,16 @@ impl<'a> Jam<'a> {
         match reconcile(
             self.opts.reconciliation_strategy,
             &self.shortcuts,
-            &nidxes.iter().map(|nidx| self.dag[*nidx].name).collect(),
+            &nidxes
+                .iter()
+                .map(|nidx| self.dag[*nidx].name)
+                .collect::<Vec<&str>>(),
             shortcut,
         ) {
             Ok(keys) => Ok(keys),
-            Err(err) => {
-                return Err(ExecError::Reconciliation {
-                    description: err.to_string(),
-                });
-            }
+            Err(err) => Err(ExecError::Reconciliation {
+                description: err.to_string(),
+            }),
         }
     }
 
@@ -489,10 +490,6 @@ mod tests {
                     .flat_map(|kv| kv.1.clone())
                     .map(|nidx| &self.dag[nidx])
                     .find(|target| target.name == target_name)
-            }
-
-            fn get_targets_by_shortcut(&self, shortcut: Shortcut) -> Option<&Vec<NodeIdx>> {
-                self.shortcuts.get(&shortcut)
             }
 
             fn has_target(&self, target_name: &str) -> bool {

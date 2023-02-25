@@ -71,7 +71,7 @@ fn main() -> anyhow::Result<()> {
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");
 
-    let shortcut = if cli.shortcut.len() > 0 {
+    let shortcut = if cli.shortcut.is_empty() {
         Shortcut(cli.shortcut)
     } else {
         tui::render(&jam)?

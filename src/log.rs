@@ -18,19 +18,19 @@ pub enum Level {
 
 impl Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#?}", self)
+        write!(f, "{self:#?}")
     }
 }
 
 impl Default for Level {
     fn default() -> Self {
-        return Level::Disabled;
+        Level::Disabled
     }
 }
 
 impl Level {
-    fn to_filter<D: Drain>(&self, drain: D) -> Filter<D, impl Fn(&Record) -> bool> {
-        let level = self.clone();
+    fn to_filter<D: Drain>(self, drain: D) -> Filter<D, impl Fn(&Record) -> bool> {
+        let level = self;
         Filter::new(drain, move |rec| match level {
             Level::Disabled => false,
             _ => rec.level().is_at_least(match level {

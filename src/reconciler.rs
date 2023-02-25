@@ -7,7 +7,7 @@ use crate::jam::{Shortcut, ShortcutTrie};
 
 type Result = anyhow::Result<Vec<char>>;
 
-fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Error {
+fn reconciliation_err(conflicts: &[&str], shortuct: &Shortcut) -> anyhow::Error {
     anyhow!(
         "reconciliation failed for shortcut '{}'; still ambiguous (e.g. is it {}?)",
         shortuct,
@@ -15,12 +15,11 @@ fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Err
     )
 }
 
-type Reconciler =
-    fn(shortcuts: &ShortcutTrie, conflicts: &Vec<&str>, shortcut: &Shortcut) -> Result;
+type Reconciler = fn(shortcuts: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result;
 
 fn first_nonmatch_reconciler(
     shortcuts: &ShortcutTrie,
-    conflicts: &Vec<&str>,
+    conflicts: &[&str],
     shortcut: &Shortcut,
 ) -> Result {
     // We now have an iterator in which every element is itself an
@@ -41,8 +40,8 @@ fn first_nonmatch_reconciler(
         seen_chars.clear();
         reconciliation.clear();
         let mut still_conflict = false;
-        for i in 0..conflict_iters.len() {
-            let next_ch = conflict_iters[i].next();
+        for conflict_iter in &mut conflict_iters {
+            let next_ch = conflict_iter.next();
             if still_conflict {
                 // Just skip, since there's no purpose. We just need
                 // to make sure we've iterated the iterator.
@@ -86,19 +85,15 @@ fn first_nonmatch_reconciler(
 /// The simple reconciler attempts to reconcile a shortcut ambiguity by
 /// finding the first non-matching character of the conflicting
 /// targets that avoids any ambiguity.
-pub static first_nonmatch: Reconciler = first_nonmatch_reconciler;
+pub static FIRST_NONMATCH: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(
-    shortcuts: &ShortcutTrie,
-    conflicts: &Vec<&str>,
-    shortcut: &Shortcut,
-) -> Result {
+fn error_reconciler(_: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result {
     Err(reconciliation_err(conflicts, shortcut))
 }
 
 // NOTE: We have to name this err because otherwise it conflicts with
 // a variable defined inside the anyhow! macro.
-pub static err_reconciler: Reconciler = error_reconciler;
+pub static ERR_RECONCILER: Reconciler = error_reconciler;
 
 #[derive(PartialEq, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -109,7 +104,7 @@ pub enum Strategy {
 
 impl std::fmt::Display for Strategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -122,12 +117,12 @@ impl Default for Strategy {
 pub fn reconcile(
     kind: Strategy,
     shortcuts: &ShortcutTrie,
-    conflicts: &Vec<&str>,
+    conflicts: &[&str],
     shortcut: &Shortcut,
 ) -> Result {
     let reconciler: Reconciler = match kind {
-        Strategy::Error => err_reconciler,
-        Strategy::FirstNonMatch => first_nonmatch,
+        Strategy::Error => ERR_RECONCILER,
+        Strategy::FirstNonMatch => FIRST_NONMATCH,
     };
 
     reconciler(shortcuts, conflicts, shortcut)
@@ -169,7 +164,7 @@ mod tests {
     #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, &conflicts, &shortcut);
+        let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
             res.expect("expected no error, but got one")
@@ -184,7 +179,7 @@ mod tests {
     #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
         let trie = Trie::new();
-        let res = first_nonmatch(&trie, &conflicts, &shortcut);
+        let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),
             format!(

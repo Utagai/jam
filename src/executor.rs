@@ -23,7 +23,7 @@ impl fmt::Display for ExecuteKind {
             #[cfg(test)]
             Self::Mock => "mock",
         };
-        write!(f, "{}", stringified)
+        write!(f, "{stringified}")
     }
 }
 
@@ -43,7 +43,7 @@ impl Executor {
 
         for kind in ExecuteKind::iter() {
             if !mapping.contains_key(&kind) {
-                panic!("unregistered executable kind: '{}'", kind)
+                panic!("unregistered executable kind: '{kind}'")
             }
         }
 
@@ -75,7 +75,7 @@ impl DryRunner {
 
 impl Executable for DryRunner {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("dry running cmd: {}", cmd);
+        println!("dry running cmd: {cmd}");
         Ok(true)
     }
 }
@@ -87,7 +87,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn new() -> Shell {
-        let shell = std::env::var("SHELL").map_or(String::from("bash"), |oss| oss.to_string());
+        let shell = std::env::var("SHELL").map_or(String::from("bash"), |oss| oss);
         Shell {
             shell,
             exec_flag: "-c",
@@ -115,7 +115,7 @@ impl Mock {
 
 impl Executable for Mock {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        println!("Mocking cmd: {}", cmd);
+        println!("Mocking cmd: {cmd}");
         Ok(true)
     }
 }

@@ -17,7 +17,7 @@ use tui::{
     Frame, Terminal,
 };
 
-use crate::jam::{Jam, Lookup, NodeIdx, Shortcut};
+use crate::jam::{Jam, Lookup, Shortcut};
 
 struct App<'a> {
     jam: &'a Jam<'a>,
@@ -125,7 +125,7 @@ fn run_app<B: Backend>(
                             Response::Execute
                         } else if app.next_keys().contains(&key) {
                             app.append(key);
-                            let is_leaf = app.next_keys().len() == 0;
+                            let is_leaf = app.next_keys().is_empty();
                             match app.jam.lookup(&app.prefix) {
                                 Lookup::Found => {
                                     if is_leaf {
@@ -157,7 +157,7 @@ fn run_app<B: Backend>(
                     Response::Execute => return Ok(app.prefix),
                     Response::Request => continue,
                     Response::Error(msg) => {
-                        println!("ERROR: {}", msg);
+                        println!("ERROR: {msg}");
                     }
                     Response::Reconcile => app.reconcile(),
                 }
@@ -179,7 +179,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let lines = app
         .next_keys()
         .iter()
-        .map(|k| Spans::from(format!("key: {}", k)))
+        .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();
 
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
