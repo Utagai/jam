@@ -105,7 +105,7 @@ impl PartialEq for Shortcut {
 
 impl std::fmt::Display for Shortcut {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.iter().collect::<String>())
+        write!(f, "{}", self.0.iter().intersperse(&'-').collect::<String>())
     }
 }
 
