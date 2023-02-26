@@ -79,7 +79,7 @@ fn run_app<B: Backend>(
                     Ok(resp) => match resp {
                         Response::Execute => return Ok(app.prefix),
                         Response::Request => continue,
-                        Response::Exit => bail!("exiting early"),
+                        Response::Exit => return Ok(Shortcut::empty()),
                     },
                     Err(err) => eprintln!("ERROR: {err}"),
                 }

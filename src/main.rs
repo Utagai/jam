@@ -77,6 +77,9 @@ fn main() -> anyhow::Result<()> {
         tui::render(&jam)?
     };
 
-    jam.execute(shortcut)?;
+    if shortcut.len() > 0 {
+        jam.execute(shortcut)?;
+    }
+
     Ok(())
 }
