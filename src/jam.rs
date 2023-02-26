@@ -128,7 +128,7 @@ impl TrieKey for Shortcut {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum ExecError {
     #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
     Ambiguous {
@@ -158,7 +158,7 @@ type ExecResult<T> = Result<T, ExecError>;
 pub enum Lookup {
     NotFound,
     Found,
-    ReconciliationFailure, // TODO: Probably should include the error message here...
+    ReconciliationFailure(String),
     Conflict,
 }
 
@@ -320,7 +320,9 @@ impl<'a> Jam<'a> {
                 shortcut: _,
                 conflict_msg: _,
             }) => Lookup::Conflict,
-            Err(ExecError::Reconciliation { description: _ }) => Lookup::ReconciliationFailure,
+            Err(ExecError::Reconciliation { description }) => {
+                Lookup::ReconciliationFailure(description)
+            }
             Err(_) => Lookup::NotFound,
         }
     }

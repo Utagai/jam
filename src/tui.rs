@@ -62,7 +62,7 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
     tick_rate: Duration,
-) -> io::Result<Shortcut> {
+) -> Result<Shortcut> {
     let mut last_tick = Instant::now();
     loop {
         // Does the actual drawing of the UI!
@@ -111,7 +111,7 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 Ok(Response::Execute)
             }
             Lookup::NotFound => bail!("current prefix does not exist"),
-            Lookup::ReconciliationFailure => {
+            Lookup::ReconciliationFailure(_) => {
                 unreachable!("reconciliation failure is not possible on shortcut termination")
             }
         },
@@ -131,7 +131,7 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                         Ok(Response::Request)
                     }
                     Lookup::NotFound => unreachable!("tui mode prefixes should always exist"),
-                    Lookup::ReconciliationFailure => bail!("failed to reconcile ambiguity"),
+                    Lookup::ReconciliationFailure(err) => bail!(err),
                 }
             } else {
                 bail!("key '{:?}' not valid in this context", key)
