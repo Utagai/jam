@@ -12,7 +12,7 @@ use crossterm::{
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
@@ -93,7 +93,7 @@ fn run_app<B: Backend>(
                         }
                         Response::Exit => return Ok(Shortcut::empty()),
                     },
-                    Err(err) => eprintln!("ERROR: {err}"),
+                    Err(err) => bail!(err),
                 }
             }
         }
@@ -169,13 +169,20 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();
 
-    let keys = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(
-        Span::styled("jam", Style::default().add_modifier(Modifier::BOLD)),
-    ));
+    let keys = Paragraph::new(lines).block(
+        Block::default().borders(Borders::ALL).title(Span::styled(
+            "jam",
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::LightGreen),
+        )),
+    );
     let error = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
         Block::default().borders(Borders::ALL).title(Span::styled(
             "errors",
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::LightRed),
         )),
     );
 
