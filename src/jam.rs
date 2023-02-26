@@ -288,9 +288,6 @@ impl<'a> Jam<'a> {
             //   a
             //   ab
             // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
-            // TODO: To be honest... this is stupid. A trie should just return 'a' once since we really want to ask:
-            // "Given the prefix "", what is the next possible characters?"
-            // And the answer should be ['a'], not ['a', 'a'].
             keys.sort_unstable();
             keys.dedup();
             keys
@@ -365,9 +362,8 @@ impl<'a> Jam<'a> {
     fn get_idxes(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
-        eprintln!("looking up shortcut: {}", shortcut);
         match shortcuts_ref.get(shortcut) {
-            Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
+            Some(nidxes) => target_idxes = nidxes.to_vec(),
             None => {
                 eprintln!("found ambiguity");
                 debug!(self.logger, "found ambiguity, attempting reconciliation");
@@ -394,7 +390,7 @@ impl<'a> Jam<'a> {
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
                         // reconciliation key is a valid one:
-                        let reconciliation_keys = self.reconcile(&tail)?;
+                        let reconciliation_keys = self.reconcile_with_nidxes(&tail, nidxes)?;
 
                         // The returned reconciliation keys are 1:1
                         // with the node indexes. i.e., the
@@ -434,10 +430,17 @@ impl<'a> Jam<'a> {
     }
 
     pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
-        // TODO: This is not performant and is technically not
-        // necessary in the Jam codepath, it is only necessary in the
-        // TUI one.
-        let nidxes = self.shortcuts.get(shortcut).unwrap();
+        let nidxes = self.shortcuts.get(shortcut).ok_or(ExecError::NotFound {
+            shortcut: shortcut.clone(),
+        })?;
+        self.reconcile_with_nidxes(shortcut, nidxes)
+    }
+
+    fn reconcile_with_nidxes(
+        &self,
+        shortcut: &Shortcut,
+        nidxes: &[NodeIdx],
+    ) -> ExecResult<Vec<char>> {
         match reconcile(
             self.opts.reconciliation_strategy,
             &self.shortcuts,
