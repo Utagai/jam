@@ -300,9 +300,11 @@ impl<'a> Jam<'a> {
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
         match self.get_idxes(shortcut) {
             Ok(idxes) => {
+                eprintln!("num of idxes found: {}", idxes.len());
                 if idxes.is_empty() {
                     Lookup::NotFound
                 } else if idxes.len() == 1 {
+                    eprintln!("so we are returning found...");
                     Lookup::Found
                 } else {
                     // Multiple.
@@ -356,9 +358,11 @@ impl<'a> Jam<'a> {
     fn get_idxes(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
+        eprintln!("looking up shortcut: {}", shortcut);
         match shortcuts_ref.get(shortcut) {
             Some(nidxes) => target_idxes = nidxes.to_vec(), // TODO: Avoid copy?
             None => {
+                eprintln!("found ambiguity");
                 debug!(self.logger, "found ambiguity, attempting reconciliation");
                 // In this case, it is possible that the user has
                 // actually specified a reconciliation character,
@@ -408,6 +412,7 @@ impl<'a> Jam<'a> {
                         };
 
                         debug!(self.logger, "reconciled");
+                        eprintln!("reconciled and returning a single idx");
                         target_idxes = vec![nidx];
                     }
                     None => {

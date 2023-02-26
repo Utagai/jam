@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
@@ -41,14 +41,20 @@ impl<'a> App<'a> {
         }
     }
 
-    fn append(&mut self, key: char) {
+    fn keypress(&mut self, key: char) -> &Vec<char> {
         self.prefix = self.prefix.append(&key);
-        if !self.reconciled {
-            self.next_keys = self.jam.next_keys(&self.prefix)
-        }
+        self.next_keys = if self.reconciled {
+            // If we reconciled & got a key-press, there are no more next keys. The shortcut is complete.
+            vec![]
+        } else {
+            // If we have not reconciled however, then let the Jam structure tell us what the next keys are, if any.
+            // TODO: I believe that making next_keys() return vec![] for the reconciled case is the correct play here.
+            self.jam.next_keys(&self.prefix)
+        };
+        &self.next_keys
     }
 
-    fn next_keys(&self) -> &Vec<char> {
+    fn current(&self) -> &Vec<char> {
         &self.next_keys
     }
 
@@ -63,9 +69,7 @@ impl<'a> App<'a> {
 
 enum Response {
     Execute,
-    Reconcile,
     Request,
-    Error(String),
 }
 
 // TODO: Make this into a method on app?
@@ -95,12 +99,9 @@ fn run_app<B: Backend>(
                 }
 
                 match respond(&mut app, key) {
-                    Response::Execute => return Ok(app.prefix),
-                    Response::Request => continue,
-                    Response::Error(msg) => {
-                        println!("ERROR: {msg}");
-                    }
-                    Response::Reconcile => app.reconcile(),
+                    Ok(Response::Execute) => return Ok(app.prefix),
+                    Ok(Response::Request) => continue,
+                    Err(err) => eprintln!("ERROR: {err}"),
                 }
             }
         }
@@ -113,12 +114,15 @@ fn run_app<B: Backend>(
     }
 }
 
-fn respond(app: &mut App, key: KeyEvent) -> Response {
+fn respond(app: &mut App, key: KeyEvent) -> Result<Response> {
     match key.code {
         KeyCode::Char('.') => match app.jam.lookup(&app.prefix) {
-            Lookup::Found => Response::Execute,
-            Lookup::Conflict => Response::Reconcile,
-            Lookup::NotFound => Response::Error(String::from("current prefix does not exist")),
+            Lookup::Found => Ok(Response::Execute),
+            Lookup::Conflict => {
+                app.reconcile();
+                Ok(Response::Execute)
+            }
+            Lookup::NotFound => bail!("current prefix does not exist"),
             Lookup::ReconciliationFailure => {
                 unreachable!("reconciliation failure is not possible on shortcut termination")
             }
@@ -126,38 +130,35 @@ fn respond(app: &mut App, key: KeyEvent) -> Response {
         KeyCode::Char(key) => {
             // TODO: This feels kind of unclean, not sure.
             // I wonder if we should make some kinda state machine like solution IDK really.
-            if app.next_keys().contains(&key) {
-                app.append(key);
-                if app.reconciled {
-                    return Response::Execute;
-                }
-
-                let is_leaf = app.next_keys().is_empty();
+            if app.current().contains(&key) {
+                let next = app.keypress(key);
+                let is_leaf = next.is_empty();
                 match app.jam.lookup(&app.prefix) {
                     Lookup::Found => {
+                        eprintln!("obviously not found...");
                         if is_leaf {
-                            Response::Execute
+                            Ok(Response::Execute)
                         } else {
-                            Response::Request
+                            Ok(Response::Request)
                         }
                     }
                     Lookup::Conflict => {
+                        eprintln!("surely not a conflict");
                         if is_leaf {
-                            Response::Reconcile
+                            app.reconcile();
+                            Ok(Response::Request)
                         } else {
-                            Response::Request
+                            Ok(Response::Request)
                         }
                     }
                     Lookup::NotFound => unreachable!("tui mode prefixes should always exist"),
-                    Lookup::ReconciliationFailure => {
-                        Response::Error(String::from("failed to reconcile ambiguity"))
-                    }
+                    Lookup::ReconciliationFailure => bail!("failed to reconcile ambiguity"),
                 }
             } else {
-                Response::Error(String::from("key not valid in this context"))
+                bail!("key not valid in this context")
             }
         }
-        _ => Response::Error(format!("unexpected key: '{:?}'", key.code)),
+        _ => bail!("unexpected key: '{:?}'", key.code),
     }
 }
 
@@ -166,7 +167,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     // Text to show in paragraph.
     let lines = app
-        .next_keys()
+        .current()
         .iter()
         .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();
