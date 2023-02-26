@@ -289,6 +289,9 @@ impl<'a> Jam<'a> {
         //   a
         //   ab
         // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
+        // TODO: To be honest... this is stupid. A trie should just return 'a' once since we really want to ask:
+        // "Given the prefix "", what is the next possible characters?"
+        // And the answer should be ['a'], not ['a', 'a'].
         keys.sort_unstable();
         keys.dedup();
         keys

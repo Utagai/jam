@@ -71,14 +71,12 @@ fn main() -> anyhow::Result<()> {
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");
 
-    let shortcut = if cli.shortcut.is_empty() {
+    let shortcut = if !cli.shortcut.is_empty() {
         Shortcut(cli.shortcut)
     } else {
         tui::render(&jam)?
     };
 
-    // TODO: We need to handle cli.shortcut vs. interactive shortcut,
-    // right now we're ignoring CLI.
     jam.execute(shortcut)?;
     Ok(())
 }
