@@ -11,7 +11,7 @@ use crossterm::{
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph},
@@ -49,6 +49,11 @@ impl<'a> App<'a> {
             .jam
             .reconcile(&self.prefix)
             .expect("failed to reconcile");
+    }
+
+    fn predict_key(&self, key: char) -> Result<Vec<&str>> {
+        let targets = self.jam.get_names(&self.prefix.append(&key))?;
+        Ok(targets)
     }
 }
 
@@ -162,31 +167,122 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let size = f.size();
 
+    static PREFIX_MARKER: &str = "...";
+    static ERROR_MARKER: &str = "???";
+
+    let max_target_len = std::cmp::max(
+        app.next
+            .iter()
+            .filter_map(|k| app.predict_key(*k).ok()) // Only take keys that can lead to something this should always be true).
+            .filter(|targets| targets.len() == 1) // Only follow those that directly lead to a target and not a prefix.
+            .map(|targets| {
+                targets
+                    .first()
+                    .expect("unreachable: length must be 1")
+                    .len()
+            }) // Map to that first target's length.
+            .max() // Grab the maximum length
+            .unwrap_or(0), // And if you end up with no keys leading to a target, default to 0.
+        std::cmp::max(PREFIX_MARKER.len(), ERROR_MARKER.len()), // These are rendered alongside targets, so should be considered.
+    );
+
+    // So, we are using center alignment. The downside to this is that
+    // the target keys are not all lined up when they are rendered. So
+    // what we really want is to center the text and then align them
+    // on the left. Unfortunately, tui-rs does not support anything
+    // more complex than left/right/center alignment. Therefore, we
+    // solve it ourselves by padding the strings we write with spaces
+    // such that each line is the same length and therefore will be
+    // left justified, while still being rendered in the center of the
+    // screen-width paragraph.
+    let padding = |s: &str| -> String { " ".repeat(max_target_len - s.len()) };
+
     // Text to show in paragraph.
     let lines = app
         .next
         .iter()
-        .map(|k| Spans::from(format!("key: {k}")))
+        .map(|k| {
+            let predicted_targets = app.predict_key(*k);
+            let mut spans = Spans::from(vec![Span::styled(
+                format!("{k}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            )]);
+            if let Ok(predicted_targets) = predicted_targets {
+                if predicted_targets.len() > 1 {
+                    spans.0.push(Span::styled(
+                        // NOTE: The reason we have a space after the
+                        // PREFIX_MARKER in the following string is
+                        // pretty subtle and took me a while to
+                        // understand. So, what you immediately might
+                        // notice is that the difference between the
+                        // PREFIX_MARKER and the target names is that
+                        // the target names are quoted in the rendered
+                        // TUI. So you'd expect, if anything, there to
+                        // be a missing _two_ spaces for the _two_
+                        // quotes. However, note that we are _center_
+                        // aligned. Therefore, a difference of n
+                        // characters is going to be chopped in
+                        // half. In this case, that means we are off
+                        // by 1 space. Try adding another pair of
+                        // quotes (') around the target name and
+                        // removing the extra space we're putting in
+                        // here. You will see that we will now be off
+                        // by 4/2 = 2 spaces.
+                        format!(" ⤙ {} {}", PREFIX_MARKER, padding(PREFIX_MARKER)),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                } else {
+                    spans
+                        .0
+                        .push(Span::styled(" ⇀ ", Style::default().fg(Color::DarkGray)));
+
+                    if let Some(target) = predicted_targets.first() {
+                        spans.0.push(Span::styled(
+                            format!("'{}'{}", target, padding(target)),
+                            Style::default().fg(Color::LightGreen),
+                        ));
+                    } else {
+                        unreachable!("there should always be at least one predicted target")
+                    }
+                }
+            } else {
+                spans.0.push(Span::styled(
+                    // NOTE: See explanation in the PREFIX_MARKER case
+                    // for why we have an extra space here.
+                    format!(" ⤙ {} {}", ERROR_MARKER, padding(ERROR_MARKER)),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            spans
+        })
         .collect::<Vec<Spans>>();
 
-    let keys = Paragraph::new(lines).block(
-        Block::default().borders(Borders::ALL).title(Span::styled(
-            "jam",
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::LightGreen),
-        )),
-    );
+    let keys = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Span::styled(
+                    " jam ",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(Color::LightGreen),
+                ))
+                .border_type(tui::widgets::BorderType::Rounded),
+        )
+        .alignment(Alignment::Center);
     let error = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
-        Block::default().borders(Borders::ALL).title(Span::styled(
-            "errors",
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::LightRed),
-        )),
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Span::styled(
+                " errors ",
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::LightRed),
+            ))
+            .border_type(tui::widgets::BorderType::Rounded),
     );
 
-    let chunks = Layout::default()
+    let paragraphs = Layout::default()
         .direction(Direction::Vertical)
         .margin(5)
         .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
@@ -197,8 +293,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // a title.
     // The paragraph just has default style and left-alignment and trimed wrapping.
     // This call below draws it onto the term.
-    f.render_widget(keys, chunks[0]);
-    f.render_widget(error, chunks[1]);
+    f.render_widget(keys, paragraphs[0]);
+    f.render_widget(error, paragraphs[1]);
 }
 
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {

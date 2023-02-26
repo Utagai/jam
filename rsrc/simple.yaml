@@ -25,7 +25,7 @@ targets:
         cmd: "echo 'ambiguous-bark'"
   - name: "bar"
     cmd: "echo 'bar'"
-  - name: "nocmd"
+  - name: "noexeccmd"
     targets:
       - name: "corge"
         help: "runs the baz command, duh"
