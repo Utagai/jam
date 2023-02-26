@@ -11,6 +11,7 @@ use crossterm::{
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
+    layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, Paragraph},
@@ -23,6 +24,7 @@ struct App<'a> {
     jam: &'a Jam<'a>,
     prefix: Shortcut,
     next: Vec<char>,
+    errmsg: String,
 }
 
 impl<'a> App<'a> {
@@ -33,6 +35,7 @@ impl<'a> App<'a> {
             jam,
             prefix: initial_prefix,
             next: next_keys,
+            errmsg: String::from(""),
         }
     }
 
@@ -54,6 +57,8 @@ enum Response {
     Execute,
     // Request for more keys to complete the current prefix.
     Request,
+    // Show an error message to the TUI and then request.
+    ShowError(String),
     // Exit TUI mode without doing anything.
     Exit,
 }
@@ -75,10 +80,17 @@ fn run_app<B: Backend>(
 
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
+                // Clear the error message on every new keypress.
+                // Otherwise we may have an error sitting, stale from some time ago.
+                app.errmsg = String::from("");
                 match handle_keypress(&mut app, key) {
                     Ok(resp) => match resp {
                         Response::Execute => return Ok(app.prefix),
                         Response::Request => continue,
+                        Response::ShowError(msg) => {
+                            app.errmsg = msg;
+                            continue;
+                        }
                         Response::Exit => return Ok(Shortcut::empty()),
                     },
                     Err(err) => eprintln!("ERROR: {err}"),
@@ -110,7 +122,10 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 app.reconcile();
                 Ok(Response::Execute)
             }
-            Lookup::NotFound => bail!("current prefix does not exist"),
+            Lookup::NotFound => Ok(Response::ShowError(format!(
+                "current prefix '{}' does not map to a command",
+                app.prefix
+            ))),
             Lookup::ReconciliationFailure(_) => {
                 unreachable!("reconciliation failure is not possible on shortcut termination")
             }
@@ -131,13 +146,16 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                         Ok(Response::Request)
                     }
                     Lookup::NotFound => unreachable!("tui mode prefixes should always exist"),
-                    Lookup::ReconciliationFailure(err) => bail!(err),
+                    Lookup::ReconciliationFailure(errmsg) => Ok(Response::ShowError(errmsg)),
                 }
             } else {
-                bail!("key '{:?}' not valid in this context", key)
+                Ok(Response::ShowError(format!("key {key:?} leads nowhere",)))
             }
         }
-        _ => bail!("unexpected key: '{:?}'", key.code),
+        _ => Ok(Response::ShowError(format!(
+            "unexpected key: '{:?}'",
+            key.code
+        ))),
     }
 }
 
@@ -151,19 +169,29 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();
 
-    let block = Block::default().borders(Borders::ALL).title(Span::styled(
-        "jam",
-        Style::default().add_modifier(Modifier::BOLD),
+    let keys = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(
+        Span::styled("jam", Style::default().add_modifier(Modifier::BOLD)),
     ));
+    let error = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
+        Block::default().borders(Borders::ALL).title(Span::styled(
+            "errors",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+    );
 
-    let paragraph = Paragraph::new(lines).block(block);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(5)
+        .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
+        .split(size);
 
     // UI is simple. We have a block (think div or span), then inside
     // it is a paragraph. The block has some styling like borders and
     // a title.
     // The paragraph just has default style and left-alignment and trimed wrapping.
     // This call below draws it onto the term.
-    f.render_widget(paragraph, size);
+    f.render_widget(keys, chunks[0]);
+    f.render_widget(error, chunks[1]);
 }
 
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
