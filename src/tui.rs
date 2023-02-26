@@ -167,6 +167,41 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let size = f.size();
 
+    let paragraphs = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(5)
+        // Make the error section always 3 pixels so it has enough
+        // space for a single line of error message + 2 for the
+        // border.
+        .constraints([Constraint::Min(20), Constraint::Length(3)].as_ref())
+        .split(size);
+
+    // UI is simple. We have a block (think div or span), then inside
+    // it is a paragraph. The block has some styling like borders and
+    // a title.
+    // The paragraph just has default style and left-alignment and trimed wrapping.
+    // This call below draws it onto the term.
+    f.render_widget(keys(app), paragraphs[0]);
+    f.render_widget(error(app), paragraphs[1]);
+}
+
+fn keys<'a>(app: &'a App) -> Paragraph<'a> {
+    Paragraph::new(key_text(app))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Span::styled(
+                    " jam ",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(Color::LightGreen),
+                ))
+                .border_type(tui::widgets::BorderType::Rounded),
+        )
+        .alignment(Alignment::Center)
+}
+
+fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
     static PREFIX_MARKER: &str = "...";
     static ERROR_MARKER: &str = "???";
 
@@ -198,8 +233,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let padding = |s: &str| -> String { " ".repeat(max_target_len - s.len()) };
 
     // Text to show in paragraph.
-    let lines = app
-        .next
+    app.next
         .iter()
         .map(|k| {
             let predicted_targets = app.predict_key(*k);
@@ -255,22 +289,11 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
             }
             spans
         })
-        .collect::<Vec<Spans>>();
+        .collect::<Vec<Spans>>()
+}
 
-    let keys = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Span::styled(
-                    " jam ",
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .fg(Color::LightGreen),
-                ))
-                .border_type(tui::widgets::BorderType::Rounded),
-        )
-        .alignment(Alignment::Center);
-    let error = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
+fn error<'a>(app: &'a App) -> Paragraph<'a> {
+    Paragraph::new(Spans::from(app.errmsg.to_string())).block(
         Block::default()
             .borders(Borders::ALL)
             .title(Span::styled(
@@ -280,21 +303,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
                     .fg(Color::LightRed),
             ))
             .border_type(tui::widgets::BorderType::Rounded),
-    );
-
-    let paragraphs = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(5)
-        .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
-        .split(size);
-
-    // UI is simple. We have a block (think div or span), then inside
-    // it is a paragraph. The block has some styling like borders and
-    // a title.
-    // The paragraph just has default style and left-alignment and trimed wrapping.
-    // This call below draws it onto the term.
-    f.render_widget(keys, paragraphs[0]);
-    f.render_widget(error, paragraphs[1]);
+    )
 }
 
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
