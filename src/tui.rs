@@ -79,7 +79,7 @@ fn run_app<B: Backend>(
                     Ok(resp) => match resp {
                         Response::Execute => return Ok(app.prefix),
                         Response::Request => continue,
-                        Response::Exit => return Ok(Shortcut::empty()), // TODO: Returning empty shortcut causes error.
+                        Response::Exit => bail!("exiting early"),
                     },
                     Err(err) => eprintln!("ERROR: {err}"),
                 }
