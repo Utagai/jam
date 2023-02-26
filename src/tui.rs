@@ -25,7 +25,7 @@ struct App<'a> {
     // TODO: I think we gotta find a cleaner way to do handle this
     // state... maybe? IDK... I would hope we can do that... maybe we
     // can merge these two? IDK.
-    next_keys: Vec<char>,
+    current: Vec<char>,
     reconciled: bool,
 }
 
@@ -36,14 +36,14 @@ impl<'a> App<'a> {
         App {
             jam,
             prefix: initial_prefix,
-            next_keys,
+            current: next_keys,
             reconciled: false,
         }
     }
 
     fn keypress(&mut self, key: char) -> &Vec<char> {
         self.prefix = self.prefix.append(&key);
-        self.next_keys = if self.reconciled {
+        self.current = if self.reconciled {
             // If we reconciled & got a key-press, there are no more next keys. The shortcut is complete.
             vec![]
         } else {
@@ -51,15 +51,11 @@ impl<'a> App<'a> {
             // TODO: I believe that making next_keys() return vec![] for the reconciled case is the correct play here.
             self.jam.next_keys(&self.prefix)
         };
-        &self.next_keys
-    }
-
-    fn current(&self) -> &Vec<char> {
-        &self.next_keys
+        &self.current
     }
 
     fn reconcile(&mut self) {
-        self.next_keys = self
+        self.current = self
             .jam
             .reconcile(&self.prefix)
             .expect("failed to reconcile");
@@ -130,7 +126,7 @@ fn respond(app: &mut App, key: KeyEvent) -> Result<Response> {
         KeyCode::Char(key) => {
             // TODO: This feels kind of unclean, not sure.
             // I wonder if we should make some kinda state machine like solution IDK really.
-            if app.current().contains(&key) {
+            if app.current.contains(&key) {
                 let next = app.keypress(key);
                 let is_leaf = next.is_empty();
                 match app.jam.lookup(&app.prefix) {
@@ -167,7 +163,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     // Text to show in paragraph.
     let lines = app
-        .current()
+        .current
         .iter()
         .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();
