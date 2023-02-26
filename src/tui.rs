@@ -22,11 +22,7 @@ use crate::jam::{Jam, Lookup, Shortcut};
 struct App<'a> {
     jam: &'a Jam<'a>,
     prefix: Shortcut,
-    // TODO: I think we gotta find a cleaner way to do handle this
-    // state... maybe? IDK... I would hope we can do that... maybe we
-    // can merge these two? IDK.
-    current: Vec<char>,
-    reconciled: bool,
+    next: Vec<char>,
 }
 
 impl<'a> App<'a> {
@@ -36,39 +32,32 @@ impl<'a> App<'a> {
         App {
             jam,
             prefix: initial_prefix,
-            current: next_keys,
-            reconciled: false,
+            next: next_keys,
         }
     }
 
-    fn keypress(&mut self, key: char) -> &Vec<char> {
+    fn keypress(&mut self, key: char) {
         self.prefix = self.prefix.append(&key);
-        self.current = if self.reconciled {
-            // If we reconciled & got a key-press, there are no more next keys. The shortcut is complete.
-            vec![]
-        } else {
-            // If we have not reconciled however, then let the Jam structure tell us what the next keys are, if any.
-            // TODO: I believe that making next_keys() return vec![] for the reconciled case is the correct play here.
-            self.jam.next_keys(&self.prefix)
-        };
-        &self.current
+        self.next = self.jam.next_keys(&self.prefix);
     }
 
     fn reconcile(&mut self) {
-        self.current = self
+        self.next = self
             .jam
             .reconcile(&self.prefix)
             .expect("failed to reconcile");
-        self.reconciled = true;
     }
 }
 
 enum Response {
+    // Execute the current inputted shortcut.
     Execute,
+    // Request for more keys to complete the current prefix.
     Request,
+    // Exit TUI mode without doing anything.
+    Exit,
 }
 
-// TODO: Make this into a method on app?
 fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
@@ -80,23 +69,18 @@ fn run_app<B: Backend>(
         // Note that we make a _call_ to ui() here, we are re-creating
         // the UI each and every time.
         terminal.draw(|f| ui(f, &app))?;
-
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
+
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                // This code here is what exits the application when
-                // you press CTRL+C.
-                if key.modifiers == KeyModifiers::CONTROL {
-                    if let KeyCode::Char('c') = key.code {
-                        return Ok(Shortcut::empty());
-                    }
-                }
-
-                match respond(&mut app, key) {
-                    Ok(Response::Execute) => return Ok(app.prefix),
-                    Ok(Response::Request) => continue,
+                match handle_keypress(&mut app, key) {
+                    Ok(resp) => match resp {
+                        Response::Execute => return Ok(app.prefix),
+                        Response::Request => continue,
+                        Response::Exit => return Ok(Shortcut::empty()), // TODO: Returning empty shortcut causes error.
+                    },
                     Err(err) => eprintln!("ERROR: {err}"),
                 }
             }
@@ -110,7 +94,15 @@ fn run_app<B: Backend>(
     }
 }
 
-fn respond(app: &mut App, key: KeyEvent) -> Result<Response> {
+fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
+    // This code here is what exits the application when
+    // you press CTRL+C.
+    if key.modifiers == KeyModifiers::CONTROL {
+        if let KeyCode::Char('c') = key.code {
+            return Ok(Response::Exit);
+        }
+    }
+
     match key.code {
         KeyCode::Char('.') => match app.jam.lookup(&app.prefix) {
             Lookup::Found => Ok(Response::Execute),
@@ -124,34 +116,25 @@ fn respond(app: &mut App, key: KeyEvent) -> Result<Response> {
             }
         },
         KeyCode::Char(key) => {
-            // TODO: This feels kind of unclean, not sure.
-            // I wonder if we should make some kinda state machine like solution IDK really.
-            if app.current.contains(&key) {
-                let next = app.keypress(key);
-                let is_leaf = next.is_empty();
-                match app.jam.lookup(&app.prefix) {
-                    Lookup::Found => {
-                        eprintln!("obviously not found...");
-                        if is_leaf {
-                            Ok(Response::Execute)
-                        } else {
-                            Ok(Response::Request)
-                        }
-                    }
-                    Lookup::Conflict => {
-                        eprintln!("surely not a conflict");
-                        if is_leaf {
+            if app.next.contains(&key) {
+                app.keypress(key);
+                let lookup_res = app.jam.lookup(&app.prefix);
+                match lookup_res {
+                    Lookup::Found | Lookup::Conflict => {
+                        let nothing_next = app.next.is_empty();
+                        if nothing_next && lookup_res == Lookup::Found {
+                            return Ok(Response::Execute);
+                        } else if nothing_next && lookup_res == Lookup::Conflict {
                             app.reconcile();
-                            Ok(Response::Request)
-                        } else {
-                            Ok(Response::Request)
                         }
+
+                        Ok(Response::Request)
                     }
                     Lookup::NotFound => unreachable!("tui mode prefixes should always exist"),
                     Lookup::ReconciliationFailure => bail!("failed to reconcile ambiguity"),
                 }
             } else {
-                bail!("key not valid in this context")
+                bail!("key '{:?}' not valid in this context", key)
             }
         }
         _ => bail!("unexpected key: '{:?}'", key.code),
@@ -163,7 +146,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     // Text to show in paragraph.
     let lines = app
-        .current
+        .next
         .iter()
         .map(|k| Spans::from(format!("key: {k}")))
         .collect::<Vec<Spans>>();

@@ -275,26 +275,31 @@ impl<'a> Jam<'a> {
     }
 
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
-        let mut keys: Vec<char> = self
-            .shortcuts
-            .subtrie(prefix)
-            .unwrap()
-            .keys()
-            .filter_map(|k| k.get(prefix.len()).copied())
-            .collect();
-        // Because the keys we return are individual _characters_ of
-        // _full_ sequences, it is possible to return duplicates
-        // here. For example, consider the following shortcuts to
-        // exist:
-        //   a
-        //   ab
-        // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
-        // TODO: To be honest... this is stupid. A trie should just return 'a' once since we really want to ask:
-        // "Given the prefix "", what is the next possible characters?"
-        // And the answer should be ['a'], not ['a', 'a'].
-        keys.sort_unstable();
-        keys.dedup();
-        keys
+        let subtrie = self.shortcuts.subtrie(prefix);
+        if let Some(subtrie) = subtrie {
+            let mut keys: Vec<char> = subtrie
+                .keys()
+                .filter_map(|k| k.get(prefix.len()).copied())
+                .collect();
+            // Because the keys we return are individual _characters_ of
+            // _full_ sequences, it is possible to return duplicates
+            // here. For example, consider the following shortcuts to
+            // exist:
+            //   a
+            //   ab
+            // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
+            // TODO: To be honest... this is stupid. A trie should just return 'a' once since we really want to ask:
+            // "Given the prefix "", what is the next possible characters?"
+            // And the answer should be ['a'], not ['a', 'a'].
+            keys.sort_unstable();
+            keys.dedup();
+            keys
+        } else {
+            // If there is no subtrie for this prefix, then there
+            // should be no next_keys, there's nothing to extend it
+            // with.
+            vec![]
+        }
     }
 
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
