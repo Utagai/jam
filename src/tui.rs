@@ -188,13 +188,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // a title.
     // The paragraph just has default style and left-alignment and trimed wrapping.
     // This call below draws it onto the term.
-    f.render_widget(keys(app), main_regions[0]);
-    f.render_widget(error(app), main_regions[1]);
-    statusbar(f, main_regions[2])
+    draw_keys(f, app, main_regions[0]);
+    draw_error(f, app, main_regions[1]);
+    draw_statusbar(f, main_regions[2])
 }
 
-fn keys<'a>(app: &'a App) -> Paragraph<'a> {
-    Paragraph::new(key_text(app))
+fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
+    let keys_para = Paragraph::new(key_text(app))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -206,7 +206,8 @@ fn keys<'a>(app: &'a App) -> Paragraph<'a> {
                 ))
                 .border_type(tui::widgets::BorderType::Rounded),
         )
-        .alignment(Alignment::Center)
+        .alignment(Alignment::Center);
+    f.render_widget(keys_para, region)
 }
 
 fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
@@ -300,8 +301,8 @@ fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
         .collect::<Vec<Spans>>()
 }
 
-fn error<'a>(app: &'a App) -> Paragraph<'a> {
-    Paragraph::new(Spans::from(app.errmsg.to_string())).block(
+fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
+    let error_para = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
         Block::default()
             .borders(Borders::ALL)
             .title(Span::styled(
@@ -311,10 +312,11 @@ fn error<'a>(app: &'a App) -> Paragraph<'a> {
                     .fg(Color::LightRed),
             ))
             .border_type(tui::widgets::BorderType::Rounded),
-    )
+    );
+    f.render_widget(error_para, region)
 }
 
-fn statusbar<B: Backend>(f: &mut Frame<B>, region: Rect) {
+fn draw_statusbar<B: Backend>(f: &mut Frame<B>, region: Rect) {
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
         .direction(Direction::Horizontal)
