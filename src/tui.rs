@@ -11,10 +11,10 @@ use crossterm::{
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Gauge, Paragraph, Sparkline},
     Frame, Terminal,
 };
 
@@ -165,24 +165,32 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
 }
 
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let size = f.size();
+    let term_region = f.size();
 
-    let paragraphs = Layout::default()
+    let main_regions = Layout::default()
         .direction(Direction::Vertical)
         .margin(5)
         // Make the error section always 3 pixels so it has enough
         // space for a single line of error message + 2 for the
         // border.
-        .constraints([Constraint::Min(20), Constraint::Length(3)].as_ref())
-        .split(size);
+        .constraints(
+            [
+                Constraint::Min(20),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ]
+            .as_ref(),
+        )
+        .split(term_region);
 
     // UI is simple. We have a block (think div or span), then inside
     // it is a paragraph. The block has some styling like borders and
     // a title.
     // The paragraph just has default style and left-alignment and trimed wrapping.
     // This call below draws it onto the term.
-    f.render_widget(keys(app), paragraphs[0]);
-    f.render_widget(error(app), paragraphs[1]);
+    f.render_widget(keys(app), main_regions[0]);
+    f.render_widget(error(app), main_regions[1]);
+    statusbar(f, main_regions[2])
 }
 
 fn keys<'a>(app: &'a App) -> Paragraph<'a> {
@@ -304,6 +312,23 @@ fn error<'a>(app: &'a App) -> Paragraph<'a> {
             ))
             .border_type(tui::widgets::BorderType::Rounded),
     )
+}
+
+fn statusbar<B: Backend>(f: &mut Frame<B>, region: Rect) {
+    // Divide the given region into the 3 sections of the status bar.
+    let status_bar_regions = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Min(50)].as_ref())
+        .split(region);
+    let fg_color_style = Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::ITALIC);
+    let curchord = Paragraph::new("curchord ...").style(fg_color_style);
+    let helptext = Paragraph::new("? - help")
+        .alignment(Alignment::Right)
+        .style(fg_color_style);
+    f.render_widget(curchord, status_bar_regions[0]);
+    f.render_widget(helptext, status_bar_regions[1]);
 }
 
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
