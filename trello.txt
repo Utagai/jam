@@ -1,0 +1,8 @@
+* Replacing period with return may be a better way to implement
+completion, since period is a very reasonable character to have in a
+build target name.
+* Question mark to bring up help is a better idea since cramming in all
+the other special keybinds into a status line is gonna be wack.
+	- This means '?' has to be added to forbidden character list.
+	- Link this to the ticket about cleaning up forbidden character handling.
+* Configurable colors
