@@ -190,7 +190,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // This call below draws it onto the term.
     draw_keys(f, app, main_regions[0]);
     draw_error(f, app, main_regions[1]);
-    draw_statusbar(f, main_regions[2])
+    draw_statusbar(f, app, main_regions[2])
 }
 
 fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
@@ -316,7 +316,7 @@ fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     f.render_widget(error_para, region)
 }
 
-fn draw_statusbar<B: Backend>(f: &mut Frame<B>, region: Rect) {
+fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
         .direction(Direction::Horizontal)
@@ -325,12 +325,14 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, region: Rect) {
     let fg_color_style = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::ITALIC);
-    let curchord = Paragraph::new("curchord ...").style(fg_color_style);
+    let prefix = Paragraph::new(format!("prefix: '{}'", app.prefix,)).style(fg_color_style);
     let helptext = Paragraph::new("? - help")
         .alignment(Alignment::Right)
         .style(fg_color_style);
-    f.render_widget(curchord, status_bar_regions[0]);
-    f.render_widget(helptext, status_bar_regions[1]);
+
+    // Draw the three sections of the status bar:
+    f.render_widget(prefix, status_bar_regions[0]);
+    f.render_widget(helptext, status_bar_regions[2]);
 }
 
 pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
