@@ -1,6 +1,6 @@
 use std::{
     io,
-    time::{Duration, Instant},
+    time::{self, Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Result};
@@ -317,11 +317,35 @@ fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
 }
 
 fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
+    let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Min(50)].as_ref())
+        .constraints(
+            [
+                Constraint::Percentage(45),
+                Constraint::Length(max_num_ellipses as u16),
+                Constraint::Percentage(45),
+            ]
+            .as_ref(),
+        )
         .split(region);
+
+    // Draw the waiting animation:
+    // Basically, every second, add another bullet point, capping it
+    // at N, after which we reset ala modulo.
+    // NOTE: Since we want 3 max bullets, and we're using %, we need
+    // to do % (N+1).
+    let num_ellipses = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time went backwards")
+        .as_secs()
+        % (max_num_ellipses + 1);
+    let ellipses = Paragraph::new("•".repeat(num_ellipses as usize))
+        .alignment(Alignment::Center)
+        .style(Style::default());
+
+    // Draw the ends of the sidebar; the prefix tracker and help text.
     let fg_color_style = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::ITALIC);
@@ -332,6 +356,7 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
 
     // Draw the three sections of the status bar:
     f.render_widget(prefix, status_bar_regions[0]);
+    f.render_widget(ellipses, status_bar_regions[1]);
     f.render_widget(helptext, status_bar_regions[2]);
 }
 
