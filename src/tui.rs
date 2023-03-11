@@ -44,6 +44,11 @@ impl<'a> App<'a> {
         self.next = self.jam.next_keys(&self.prefix);
     }
 
+    fn reverse(&mut self) {
+        self.prefix.pop();
+        self.next = self.jam.next_keys(&self.prefix)
+    }
+
     fn reconcile(&mut self) {
         self.next = self
             .jam
@@ -135,6 +140,10 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 unreachable!("reconciliation failure is not possible on shortcut termination")
             }
         },
+        KeyCode::Backspace => {
+            app.reverse();
+            Ok(Response::Request)
+        }
         KeyCode::Char(key) => {
             if app.next.contains(&key) {
                 app.keypress(key);

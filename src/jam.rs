@@ -86,6 +86,10 @@ impl Shortcut {
     pub fn get(&self, idx: usize) -> Option<&char> {
         self.0.get(idx)
     }
+
+    pub fn pop(&mut self) {
+        self.0.pop();
+    }
 }
 
 impl From<&Self> for Shortcut {
