@@ -1,6 +1,6 @@
 use std::{
     io,
-    time::{self, Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Result};
@@ -14,7 +14,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Gauge, Paragraph, Sparkline},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 
@@ -130,7 +130,7 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
             Lookup::Found => Ok(Response::Execute),
             Lookup::Conflict => {
                 app.reconcile();
-                Ok(Response::Execute)
+                Ok(Response::Request)
             }
             Lookup::NotFound => Ok(Response::ShowError(format!(
                 "current prefix '{}' does not map to a command",
