@@ -9,7 +9,7 @@ clap = { version = "4.1.4", features = ["derive"] }
 crossterm = "0.26.0"
 daggy = "0.8.0"
 either = "1.8.0"
-radix_trie = "0.2.1"
+sequence_trie = "0.3.6"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_yaml = "0.9.17"
 slog = "2.7.0"
