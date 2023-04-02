@@ -54,7 +54,7 @@ pub fn logger(level: Level, config_path: &'static str) -> slog::Logger {
         .into_string()
         .expect("failed to convert cwd OS string to string");
 
-    let decorator = slog_term::TermDecorator::new().build();
+    let decorator = slog_term::TermDecorator::new().stderr().build();
     let drain = slog_term::FullFormat::new(decorator).build();
     let drain = level.to_filter(drain);
     let drain = std::sync::Mutex::new(drain).fuse();

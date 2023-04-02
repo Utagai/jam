@@ -9,7 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use slog::{debug, Logger};
+use slog::Logger;
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -60,9 +60,7 @@ impl<'a> App<'a> {
     }
 
     fn predict_key(&self, key: char) -> Result<Vec<&str>> {
-        // TODO: Remove unnecessary Ok()
-        let names = self.jam.get_assoc_names(&self.prefix.append(&key))?;
-        Ok(names)
+        Ok(self.jam.get_children_names(&self.prefix.append(&key))?)
     }
 }
 
