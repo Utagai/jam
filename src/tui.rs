@@ -221,32 +221,51 @@ fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     f.render_widget(keys_para, region)
 }
 
-fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
-    static PREFIX_MARKER: &str = "...";
-    static ERROR_MARKER: &str = "???";
+static PREFIX_MARKER: &str = "...";
+static ERROR_MARKER: &str = "???";
 
-    // TODO: Can simplify this chain by treating multiple predicted targets as becoming the PREFIX_MARKER string.
-    // TODO: See above, but also, we could maybe instead generate all
-    // the target name strings, without rendering them, and then do a
-    // pass through them to pad them based on the largest target name
-    // we generated. We can embed this logic into the drawing
-    // logic/loop below this section.
-    let max_target_len = std::cmp::max(
-        app.next
+fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
+    let target_strings_to_render: Vec<(&char, &str, &str)> = app
+        .next
+        .iter()
+        .filter_map(|k| app.predict_key(*k).ok().map(|targets| (k, targets)))
+        .map(|(k, targets)| {
+            if targets.len() > 1 {
+                (k, PREFIX_MARKER, " ⤙ ")
+            } else if let Some(target_name) = targets.first() {
+                (k, *target_name, " ⇀ ")
+            } else {
+                (k, ERROR_MARKER, " ⇀ ")
+            }
+        })
+        .collect();
+
+    let max_target_string_len = std::cmp::max(
+        target_strings_to_render
             .iter()
-            .filter_map(|k| app.predict_key(*k).ok()) // Only take keys that can lead to something.
-            .filter(|targets| targets.len() == 1) // Only follow those that directly lead to a target and not a prefix.
-            .map(|targets| {
-                targets
-                    .first()
-                    .expect("unreachable: length must be 1")
-                    .len()
-            }) // Map to that first target's length.
-            .max() // Grab the maximum length
-            .unwrap_or(0), // And if you end up with no keys leading to a target, default to 0.
-        std::cmp::max(PREFIX_MARKER.len(), ERROR_MARKER.len()), // These are rendered alongside targets, so should be considered.
+            .map(|(_, ts, _)| ts.len())
+            .max()
+            .unwrap_or(0),
+        std::cmp::max(PREFIX_MARKER.len(), ERROR_MARKER.len()),
     );
 
+    // Text to show in paragraph.
+    let spans_to_render = target_strings_to_render
+        .iter()
+        .map(|(k, target_string, connector)| {
+            generate_spans_for_key(k, target_string, connector, max_target_string_len)
+        })
+        .collect::<Vec<Spans>>();
+
+    spans_to_render
+}
+
+fn generate_spans_for_key<'a>(
+    k: &'a char,
+    target_string: &'a str,
+    connector: &'a str,
+    max_target_string_len: usize,
+) -> Spans<'a> {
     // So, we are using center alignment. The downside to this is that
     // the target keys are not all lined up when they are rendered. So
     // what we really want is to center the text and then align them
@@ -256,66 +275,49 @@ fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
     // such that each line is the same length and therefore will be
     // left justified, while still being rendered in the center of the
     // screen-width paragraph.
-    let padding = |s: &str| -> String { " ".repeat(max_target_len - s.len()) };
-
-    // Text to show in paragraph.
-    app.next
-        .iter()
-        .map(|k| {
-            let predicted_targets = app.predict_key(*k);
-            let mut spans = Spans::from(vec![Span::styled(
-                format!("{k}"),
-                Style::default().add_modifier(Modifier::BOLD),
-            )]);
-            if let Ok(predicted_targets) = predicted_targets {
-                if predicted_targets.len() > 1 {
-                    spans.0.push(Span::styled(
-                        // NOTE: The reason we have a space after the
-                        // PREFIX_MARKER in the following string is
-                        // pretty subtle and took me a while to
-                        // understand. So, what you immediately might
-                        // notice is that the difference between the
-                        // PREFIX_MARKER and the target names is that
-                        // the target names are quoted in the rendered
-                        // TUI. So you'd expect, if anything, there to
-                        // be a missing _two_ spaces for the _two_
-                        // quotes. However, note that we are _center_
-                        // aligned. Therefore, a difference of n
-                        // characters is going to be chopped in
-                        // half. In this case, that means we are off
-                        // by 1 space. Try adding another pair of
-                        // quotes (') around the target name and
-                        // removing the extra space we're putting in
-                        // here. You will see that we will now be off
-                        // by 4/2 = 2 spaces.
-                        format!(" ⤙ {} {}", PREFIX_MARKER, padding(PREFIX_MARKER)),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                } else {
-                    spans
-                        .0
-                        .push(Span::styled(" ⇀ ", Style::default().fg(Color::DarkGray)));
-
-                    if let Some(target) = predicted_targets.first() {
-                        spans.0.push(Span::styled(
-                            format!("'{}'{}", target, padding(target)),
-                            Style::default().fg(Color::LightGreen),
-                        ));
-                    } else {
-                        unreachable!("there should always be at least one predicted target")
-                    }
-                }
-            } else {
-                spans.0.push(Span::styled(
-                    // NOTE: See explanation in the PREFIX_MARKER case
-                    // for why we have an extra space here.
-                    format!(" ⤙ {} {}", ERROR_MARKER, padding(ERROR_MARKER)),
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
-            spans
-        })
-        .collect::<Vec<Spans>>()
+    let padding = " ".repeat(max_target_string_len - target_string.len());
+    Spans::from(vec![
+        // ----
+        // Key.
+        Span::styled(
+            format!("{k}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        // --------------------------
+        // Connector (e.g. an arrow).
+        Span::styled(connector.to_string(), Style::default().fg(Color::DarkGray)),
+        // --------------------------
+        // The target name or marker.
+        if target_string == PREFIX_MARKER || target_string == ERROR_MARKER {
+            Span::styled(
+                // NOTE: The reason we have a space after the
+                // PREFIX_MARKER in the following string is
+                // pretty subtle and took me a while to
+                // understand. So, what you immediately might
+                // notice is that the difference between the
+                // PREFIX_MARKER and the target names is that
+                // the target names are quoted in the rendered
+                // TUI. So you'd expect, if anything, there to
+                // be a missing _two_ spaces for the _two_
+                // quotes. However, note that we are _center_
+                // aligned. Therefore, a difference of n
+                // characters is going to be chopped in
+                // half. In this case, that means we are off
+                // by 1 space. Try adding another pair of
+                // quotes (') around the target name and
+                // removing the extra space we're putting in
+                // here. You will see that we will now be off
+                // by 4/2 = 2 spaces.
+                format!("{target_string} {padding}"),
+                Style::default().fg(Color::DarkGray),
+            )
+        } else {
+            Span::styled(
+                format!("'{target_string}'{padding}"),
+                Style::default().fg(Color::LightGreen),
+            )
+        },
+    ])
 }
 
 fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
