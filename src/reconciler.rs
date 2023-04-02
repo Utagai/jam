@@ -53,7 +53,7 @@ fn first_nonmatch_reconciler(
                         still_conflict = true;
                     } else {
                         let new_shortcut = shortcut.append(&ch);
-                        if shortcuts.get(&new_shortcut).is_some() {
+                        if shortcuts.get(new_shortcut.iter()).is_some() {
                             // This shortcut extension may avoid conflicts here, but not elsewhere.
                             still_conflict = true;
                         }
@@ -133,8 +133,8 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
-    use radix_trie::Trie;
     use rstest::rstest;
+    use sequence_trie::SequenceTrie;
 
     macro_rules! shortcut {
 		    ( $( $x:expr ),* ) => {
@@ -163,7 +163,7 @@ mod tests {
     #[case::many_conflicts_keep_almost_reconciling(shortcut!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
     #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
-        let trie = Trie::new();
+        let trie = SequenceTrie::new();
         let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
@@ -178,7 +178,7 @@ mod tests {
     #[case::multiple_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "baz", "quux"])]
     #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
-        let trie = Trie::new();
+        let trie = SequenceTrie::new();
         let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),

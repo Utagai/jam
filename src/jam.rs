@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, slice::Iter};
 
 use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
-use radix_trie::{Trie, TrieCommon, TrieKey};
+use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
 use thiserror::Error;
 
@@ -34,7 +34,7 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 
 type IdxT = u32;
 pub type NodeIdx = NodeIndex<IdxT>;
-pub type ShortcutTrie = Trie<Shortcut, Vec<NodeIdx>>;
+pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
     opts: &'a Options,
@@ -83,12 +83,12 @@ impl Shortcut {
         self.0.len()
     }
 
-    pub fn get(&self, idx: usize) -> Option<&char> {
-        self.0.get(idx)
-    }
-
     pub fn pop(&mut self) {
         self.0.pop();
+    }
+
+    pub fn iter(&self) -> Iter<'_, char> {
+        self.0.iter()
     }
 }
 
@@ -116,19 +116,6 @@ impl std::fmt::Display for Shortcut {
 impl Clone for Shortcut {
     fn clone(&self) -> Self {
         Shortcut(self.0.to_vec())
-    }
-}
-
-impl TrieKey for Shortcut {
-    fn encode_bytes(&self) -> Vec<u8> {
-        self.0
-            .iter()
-            .flat_map(|ch| {
-                let mut buf: [u8; 4] = [0; 4];
-                let s = ch.encode_utf8(&mut buf);
-                s.encode_bytes()
-            })
-            .collect()
     }
 }
 
@@ -175,7 +162,7 @@ impl<'a> Jam<'a> {
         let mut dag: Dag<Target, IdxT> = Dag::new();
         let mut deps: Vec<(&str, &str)> = Vec::new();
         let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
-        let mut trie: ShortcutTrie = Trie::new();
+        let mut trie: ShortcutTrie = SequenceTrie::new();
 
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
@@ -217,11 +204,11 @@ impl<'a> Jam<'a> {
             // jam startup, but the lazy approach only does it if
             // the user is going to use an ambiguous shortcut, which
             // may only be for very rare targets!
-            trie.map_with_default(
-                target_shortcut,
-                |idxes| idxes.push(node_idx),
-                vec![node_idx],
-            );
+            if let Some(idxes) = trie.get_mut(target_shortcut.iter()) {
+                idxes.push(node_idx);
+            } else {
+                trie.insert(target_shortcut.iter(), vec![node_idx]);
+            }
 
             // And at last, record the mapping of target name to
             // its node index.
@@ -247,6 +234,7 @@ impl<'a> Jam<'a> {
         }
 
         debug!(logger, "finished initializing structures"; o!("num_targets" => node_idxes.len(), "dep_links" => deps.len()));
+
         Ok(Jam {
             // NOTE: If we ever end up having a distinction between
             // config-time options vs. run-time options, we may want
@@ -279,11 +267,14 @@ impl<'a> Jam<'a> {
     }
 
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
-        let subtrie = self.shortcuts.subtrie(prefix);
+        // TODO: This constant need to call `.iter()` is stupid.
+        let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
             let mut keys: Vec<char> = subtrie
                 .keys()
-                .filter_map(|k| k.get(prefix.len()).copied())
+                .filter(|k| !k.is_empty())
+                .filter_map(|k| k.get(0).copied())
+                .cloned()
                 .collect();
             // Because the keys we return are individual _characters_ of
             // _full_ sequences, it is possible to return duplicates
@@ -326,12 +317,36 @@ impl<'a> Jam<'a> {
         }
     }
 
-    pub fn get_names(&self, shortcut: &Shortcut) -> ExecResult<Vec<&'a str>> {
-        Ok(self
-            .get_idxes(shortcut)?
-            .iter()
-            .map(|idx| self.dag[*idx].name)
-            .collect())
+    pub fn get_children_names(&self, shortcut: &Shortcut) -> ExecResult<Vec<&'a str>> {
+        // NOTE: We do not directly dispatch to get_idxes because
+        // get_idxes tries to find the nodes that a given shortcut
+        // maps to.  We don't actually want that here. We want the
+        // things that this shortcut can _eventually_ lead to.
+        // AKA, we don't want just the shortcut itself, we also want
+        // its children.
+        //
+        // The only time get_idxes is what we want here is if the
+        // shortcut is the solution to a reconciliation, in which case
+        // it cannot have any children, it instead must be a leaf so
+        // it cannot lead to anything besides itself. This also means
+        // that if the given shortcut leads to nothing but itself,
+        // this function is indeed equivalent to calling get_idxes
+        // directly.
+        Ok(
+            if let Some(subtrie) = self.shortcuts.get_node(shortcut.iter()) {
+                subtrie
+                    .values() // Gets the key values contained under this subtrie, which means only the super-strings.
+                    .flatten() // Flatten them into a stream of node indexes, since a single key can map to multiple targets.
+                    .map(|nidx| self.dag[*nidx].name) // Look up the node index to get the proper target name.
+                    .collect()
+            } else {
+                // If the shortcut isn't found in the trie, it is likely a conflict.
+                self.get_idxes(shortcut)? // Run get_idxes to see if reconciliation gets us anything.
+                    .iter() // Iterate them.
+                    .map(|idx| self.dag[*idx].name) // And map them to their names.
+                    .collect()
+            },
+        )
     }
 
     fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> ExecResult<()> {
@@ -372,7 +387,7 @@ impl<'a> Jam<'a> {
     fn get_idxes(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
-        match shortcuts_ref.get(shortcut) {
+        match shortcuts_ref.get(shortcut.iter()) {
             Some(nidxes) => target_idxes = nidxes.to_vec(),
             None => {
                 debug!(self.logger, "found ambiguity, attempting reconciliation");
@@ -382,7 +397,7 @@ impl<'a> Jam<'a> {
                 // reconcile. So let's do that.
                 let (tail, key) = shortcut.tail();
                 // To see if this is correct, first, we expect the tail to exist:
-                match shortcuts_ref.get(&tail) {
+                match shortcuts_ref.get(tail.iter()) {
                     Some(nidxes) => {
                         // Secondly, not only must it exist, but it
                         // must be referring to a shortcut that has
@@ -438,9 +453,12 @@ impl<'a> Jam<'a> {
     }
 
     pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
-        let nidxes = self.shortcuts.get(shortcut).ok_or(ExecError::NotFound {
-            shortcut: shortcut.clone(),
-        })?;
+        let nidxes = self
+            .shortcuts
+            .get(shortcut.iter())
+            .ok_or(ExecError::NotFound {
+                shortcut: shortcut.clone(),
+            })?;
         self.reconcile_with_nidxes(shortcut, nidxes)
     }
 
@@ -490,7 +508,6 @@ impl<'a> Jam<'a> {
 mod tests {
     use super::*;
     use crate::config::target;
-    use radix_trie::TrieCommon;
 
     mod parse {
         use super::*;
