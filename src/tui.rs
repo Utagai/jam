@@ -9,6 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use slog::{debug, Logger};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -25,10 +26,11 @@ struct App<'a> {
     prefix: Shortcut,
     next: Vec<char>,
     errmsg: String,
+    logger: Logger,
 }
 
 impl<'a> App<'a> {
-    fn new(jam: &'a Jam<'a>) -> App<'a> {
+    fn new(logger: Logger, jam: &'a Jam<'a>) -> App<'a> {
         let initial_prefix = Shortcut::empty();
         let next_keys = jam.next_keys(&initial_prefix);
         App {
@@ -36,6 +38,7 @@ impl<'a> App<'a> {
             prefix: initial_prefix,
             next: next_keys,
             errmsg: String::from(""),
+            logger,
         }
     }
 
@@ -57,8 +60,9 @@ impl<'a> App<'a> {
     }
 
     fn predict_key(&self, key: char) -> Result<Vec<&str>> {
-        let targets = self.jam.get_names(&self.prefix.append(&key))?;
-        Ok(targets)
+        // TODO: Remove unnecessary Ok()
+        let names = self.jam.get_assoc_names(&self.prefix.append(&key))?;
+        Ok(names)
     }
 }
 
@@ -223,10 +227,16 @@ fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
     static PREFIX_MARKER: &str = "...";
     static ERROR_MARKER: &str = "???";
 
+    // TODO: Can simplify this chain by treating multiple predicted targets as becoming the PREFIX_MARKER string.
+    // TODO: See above, but also, we could maybe instead generate all
+    // the target name strings, without rendering them, and then do a
+    // pass through them to pad them based on the largest target name
+    // we generated. We can embed this logic into the drawing
+    // logic/loop below this section.
     let max_target_len = std::cmp::max(
         app.next
             .iter()
-            .filter_map(|k| app.predict_key(*k).ok()) // Only take keys that can lead to something this should always be true).
+            .filter_map(|k| app.predict_key(*k).ok()) // Only take keys that can lead to something.
             .filter(|targets| targets.len() == 1) // Only follow those that directly lead to a target and not a prefix.
             .map(|targets| {
                 targets
@@ -369,7 +379,7 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     f.render_widget(helptext, status_bar_regions[2]);
 }
 
-pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
+pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -381,7 +391,7 @@ pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
     let tick_rate = Duration::from_millis(500);
     // Create new 'app'. Really, this is just a bag of state to carry across 'ticks'.
     // Each tick is basically an entire refresh of the UI (see above 'tick_rate').
-    let app = App::new(jam);
+    let app = App::new(logger, jam);
     // Run app runs the tick loop that constantly refreshes the loop based on tick_rate.
     // It relies on the ui() function to recreate the UI. The UI takes app to help it decide what to draw.
     let res = run_app(&mut terminal, app, tick_rate)?;
