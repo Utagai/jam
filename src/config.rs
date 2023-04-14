@@ -173,6 +173,8 @@ impl Config {
 
 #[cfg(test)]
 pub mod target {
+    use std::path::Path;
+
     use super::*;
 
     pub fn lone(name: &str) -> TargetCfg {
@@ -208,6 +210,24 @@ pub mod target {
             targets: Some(subs),
             deps: None,
             execute_kind: None,
+        }
+    }
+
+    // Note that the given out_file will be effectively appended to
+    // cmd as " > {out_file}". This is to aid in testing, by allowing
+    // the tests to use out_file as a place where the output of the
+    // command will go. As implied by the above description, this
+    // means that this function will return a TargetCfg that has an
+    // executes via shell.
+    pub fn exec(name: &str, cmd: &str, out_file: &str) -> TargetCfg {
+        TargetCfg {
+            name: String::from(name),
+            shortcut_str: None,
+            help: None,
+            cmd: Some(format!("{} > {}", cmd, out_file)),
+            targets: None,
+            deps: None,
+            execute_kind: Some(ExecuteKind::Shell),
         }
     }
 }

@@ -9,10 +9,6 @@ pub mod tmp {
     use tempdir::TempDir;
 
     pub fn check_file<P: AsRef<Path>>(path: P) -> bool {
-        let x = Some("foo");
-        if x.is_some() {
-            println!("{}", x.unwrap());
-        }
         metadata(path).is_ok()
     }
 

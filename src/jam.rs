@@ -507,13 +507,24 @@ impl<'a> Jam<'a> {
 mod tests {
     use super::*;
     use crate::config::target;
+    use crate::config::{Config, TargetCfg};
+
+    use slog::*;
+    use slog_term::TestStdoutWriter;
+
+    fn test_logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(TestStdoutWriter);
+        let drain = slog_term::CompactFormat::new(decorator).build();
+        let drain = std::sync::Mutex::new(drain).fuse();
+        slog::Logger::root(drain, o!())
+    }
+
+    fn get_jam(cfg: &DesugaredConfig) -> Jam {
+        Jam::new(&test_logger(), Executor::new(), cfg).expect("expected no errors from parsing")
+    }
 
     mod parse {
         use super::*;
-
-        use crate::config::{Config, TargetCfg};
-        use slog::*;
-        use slog_term::TestStdoutWriter;
 
         use crate::config::Options;
         use crate::log::Level;
@@ -552,17 +563,6 @@ mod tests {
 
                 false
             }
-        }
-
-        fn test_logger() -> slog::Logger {
-            let decorator = slog_term::PlainSyncDecorator::new(TestStdoutWriter);
-            let drain = slog_term::CompactFormat::new(decorator).build();
-            let drain = std::sync::Mutex::new(drain).fuse();
-            slog::Logger::root(drain, o!())
-        }
-
-        fn get_jam(cfg: &DesugaredConfig) -> Jam {
-            Jam::new(&test_logger(), Executor::new(), cfg).expect("expected no errors from parsing")
         }
 
         fn check_jam_err(targets: Vec<TargetCfg>, expected_err: &str) {
@@ -833,6 +833,31 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    mod execution {
+        use crate::testutils::tmp::*;
+
+        use super::*;
+
+        fn test_exec(name: &str, cmd: &str) -> (DesugaredConfig, TmpFile) {
+            let out_file = TmpFile::new();
+            return (
+                Config::with_targets(vec![target::exec(name, cmd, &out_file.to_string())]),
+                out_file,
+            );
+        }
+
+        #[test]
+        fn jam_executes_simple_target() {
+            let expected_message = "hello world";
+            let cmd = &format!("echo {expected_message}");
+            let (cfg, out_path) = test_exec("blah", cmd);
+            let jam = get_jam(&cfg);
+            jam.execute(Shortcut::from_shortcut_str("b"))
+                .expect("expected execution of the command to pass");
+            check_file_contents(out_path, expected_message);
         }
     }
 }
