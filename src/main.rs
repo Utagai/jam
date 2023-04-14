@@ -15,6 +15,13 @@ mod log;
 mod reconciler;
 mod tui;
 
+// NOTE: I wasn't able to figure out how to not have this be
+// here. Ideally I could just chuck this into a module whose tests
+// rely on this or something to that effect... but IDK...
+// I think this just looks ugly, but shouldn't affect much.
+#[cfg(test)]
+mod testutils;
+
 /// J̲am (isn't) A̲nother M̲ake.
 /// A task runner.
 #[derive(Parser, Debug)]

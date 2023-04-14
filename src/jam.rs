@@ -267,7 +267,6 @@ impl<'a> Jam<'a> {
     }
 
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
-        // TODO: This constant need to call `.iter()` is stupid.
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
             let mut keys: Vec<char> = subtrie
