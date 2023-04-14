@@ -837,12 +837,12 @@ mod tests {
     }
 
     mod execution {
-        use crate::testutils::tmp::*;
+        use crate::{reconciler::Strategy, testutils::tmp::*};
 
         use super::*;
 
         #[test]
-        fn jam_executes_simple_target() {
+        fn executes_simple_target() {
             let expected_message = "hello world";
             let cmd = &format!("echo {expected_message}");
             let out_file = TmpFile::new();
@@ -854,7 +854,7 @@ mod tests {
         }
 
         #[test]
-        fn jam_executes_dep() {
+        fn executes_dep() {
             let foo_cmd = &format!("echo 'foo'");
             let bar_cmd = &format!("echo 'bar'");
             let foo_file = TmpFile::new();
@@ -871,7 +871,7 @@ mod tests {
         }
 
         #[test]
-        fn jam_executes_dep_only_if_ran_explicitly() {
+        fn executes_dep_only_when_ran_explicitly() {
             let foo_cmd = &format!("echo 'foo'");
             let bar_cmd = &format!("echo 'bar'");
             let foo_file = TmpFile::new();
@@ -886,6 +886,59 @@ mod tests {
             // Foo should not have been executed, since we executed 'b', or bar, only.
             assert!(!check_file(foo_file));
             check_file_contents(bar_file, "bar");
+        }
+
+        #[test]
+        fn honors_execute_kind() {
+            // This is a bit bleh, cause if we had a bug and we did
+            // try to write to this file, it is very possible we'd
+            // fail from a permissions issue, etc. This would still
+            // fail the test, so we're considering that acceptable,
+            // but it would be cleaner to avoid that since a failure
+            // about permissions does not directly indicate that the
+            // problem is a lack of honoring of execute kinds.
+            let out_file = "/tmp/blah.txt";
+            let cfg = Config::with_targets(vec![TargetCfg {
+                name: String::from("blah"),
+                shortcut_str: None,
+                help: None,
+                cmd: Some(String::from(format!(
+                    "echo 'should not be ran!' > {out_file}"
+                ))),
+                targets: None,
+                deps: None,
+                execute_kind: Some(ExecuteKind::DryRun),
+            }]);
+            let jam = get_jam(&cfg);
+            jam.execute(Shortcut::from_shortcut_str("b"))
+                .expect("expected execution of the command to pass");
+            // Since we are executing via dry run, no command and
+            // therefore no file should have been created.
+            assert!(!check_file(out_file));
+        }
+
+        #[test]
+        fn handles_reconciliation() {
+            let expected_message = "hello world";
+            let cmd = &format!("echo {expected_message}");
+            let breh_file = TmpFile::new();
+            let bruh_file = TmpFile::new();
+            let mut cfg = Config::with_targets(vec![
+                target::exec("breh", cmd, &breh_file),
+                target::exec("bruh", cmd, &bruh_file),
+            ]);
+            cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
+            let jam = get_jam(&cfg);
+            // When we attempt to execute 'b-u', 'b' by itself would
+            // be ambiguous.
+            // 'b-u' however distinguishes 'bruh' from 'breh'. We
+            // should therefore see bruh_file with the expected
+            // contents, but not breh_file.
+            println!("Shortcut: {}", Shortcut::from_shortcut_str("b-u"));
+            jam.execute(Shortcut::from_shortcut_str("b-u"))
+                .expect("expected execution of the command to pass");
+            check_file_contents(bruh_file, expected_message);
+            assert!(!check_file(breh_file))
         }
     }
 }
