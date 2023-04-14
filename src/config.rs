@@ -230,6 +230,23 @@ pub mod target {
             execute_kind: Some(ExecuteKind::Shell),
         }
     }
+
+    pub fn exec_deps<P: AsRef<Path>>(
+        name: &str,
+        cmd: &str,
+        out_file: P,
+        deps: Vec<&str>,
+    ) -> TargetCfg {
+        TargetCfg {
+            name: String::from(name),
+            shortcut_str: None,
+            help: None,
+            cmd: Some(format!("{} > {}", cmd, out_file.as_ref().to_string_lossy())),
+            targets: None,
+            deps: Some(deps.iter().map(|dep| String::from(*dep)).collect()),
+            execute_kind: Some(ExecuteKind::Shell),
+        }
+    }
 }
 
 #[cfg(test)]

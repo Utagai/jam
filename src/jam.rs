@@ -852,5 +852,40 @@ mod tests {
                 .expect("expected execution of the command to pass");
             check_file_contents(out_file, expected_message);
         }
+
+        #[test]
+        fn jam_executes_dep() {
+            let foo_cmd = &format!("echo 'foo'");
+            let bar_cmd = &format!("echo 'bar'");
+            let foo_file = TmpFile::new();
+            let bar_file = TmpFile::new();
+            let cfg = Config::with_targets(vec![
+                target::exec("bar", bar_cmd, &bar_file),
+                target::exec_deps("foo", foo_cmd, &foo_file, vec!["bar"]),
+            ]);
+            let jam = get_jam(&cfg);
+            jam.execute(Shortcut::from_shortcut_str("f"))
+                .expect("expected execution of the command to pass");
+            check_file_contents(foo_file, "foo");
+            check_file_contents(bar_file, "bar");
+        }
+
+        #[test]
+        fn jam_executes_dep_only_if_ran_explicitly() {
+            let foo_cmd = &format!("echo 'foo'");
+            let bar_cmd = &format!("echo 'bar'");
+            let foo_file = TmpFile::new();
+            let bar_file = TmpFile::new();
+            let cfg = Config::with_targets(vec![
+                target::exec("bar", bar_cmd, &bar_file),
+                target::exec_deps("foo", foo_cmd, &foo_file, vec!["bar"]),
+            ]);
+            let jam = get_jam(&cfg);
+            jam.execute(Shortcut::from_shortcut_str("b"))
+                .expect("expected execution of the command to pass");
+            // Foo should not have been executed, since we executed 'b', or bar, only.
+            assert!(!check_file(foo_file));
+            check_file_contents(bar_file, "bar");
+        }
     }
 }
