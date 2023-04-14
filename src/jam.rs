@@ -374,8 +374,13 @@ impl<'a> Jam<'a> {
         if let Some(cmd) = target.cmd {
             info!(logger, "running executor"; o!("cmd" => cmd));
             match self.executor.execute(target.execute_kind, cmd) {
-                Ok(_) => {
+                Ok(true) => {
                     info!(logger, "successfully executed target");
+                }
+                Ok(false) => {
+                    return Err(ExecError::Executor {
+                        description: String::from("command failed to execute"),
+                    })
                 }
                 Err(err) => {
                     info!(logger, "failed to execute target");
