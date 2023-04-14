@@ -219,12 +219,12 @@ pub mod target {
     // command will go. As implied by the above description, this
     // means that this function will return a TargetCfg that has an
     // executes via shell.
-    pub fn exec(name: &str, cmd: &str, out_file: &str) -> TargetCfg {
+    pub fn exec<P: AsRef<Path>>(name: &str, cmd: &str, out_file: P) -> TargetCfg {
         TargetCfg {
             name: String::from(name),
             shortcut_str: None,
             help: None,
-            cmd: Some(format!("{} > {}", cmd, out_file)),
+            cmd: Some(format!("{} > {}", cmd, out_file.as_ref().to_string_lossy())),
             targets: None,
             deps: None,
             execute_kind: Some(ExecuteKind::Shell),

@@ -841,23 +841,16 @@ mod tests {
 
         use super::*;
 
-        fn test_exec(name: &str, cmd: &str) -> (DesugaredConfig, TmpFile) {
-            let out_file = TmpFile::new();
-            return (
-                Config::with_targets(vec![target::exec(name, cmd, &out_file.to_string())]),
-                out_file,
-            );
-        }
-
         #[test]
         fn jam_executes_simple_target() {
             let expected_message = "hello world";
             let cmd = &format!("echo {expected_message}");
-            let (cfg, out_path) = test_exec("blah", cmd);
+            let out_file = TmpFile::new();
+            let cfg = Config::with_targets(vec![target::exec("blah", cmd, &out_file)]);
             let jam = get_jam(&cfg);
             jam.execute(Shortcut::from_shortcut_str("b"))
                 .expect("expected execution of the command to pass");
-            check_file_contents(out_path, expected_message);
+            check_file_contents(out_file, expected_message);
         }
     }
 }
