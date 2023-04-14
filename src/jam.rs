@@ -948,11 +948,136 @@ mod tests {
             // 'b-u' however distinguishes 'bruh' from 'breh'. We
             // should therefore see bruh_file with the expected
             // contents, but not breh_file.
-            println!("Shortcut: {}", Shortcut::from_shortcut_str("b-u"));
             jam.execute(Shortcut::from_shortcut_str("b-u"))
                 .expect("expected execution of the command to pass");
             check_file_contents(bruh_file, expected_message);
             assert!(!check_file(breh_file))
+        }
+
+        mod errors {
+            use super::*;
+
+            fn check_err(res: ExecResult<()>, expected_err: &str) {
+                assert_eq!(
+                    res.expect_err("expected execution of the command to fail")
+                        .to_string(),
+                    expected_err
+                );
+            }
+
+            #[test]
+            fn failed_reconciliation() {
+                let cmd = &format!("blah");
+                let out_file_bar = TmpFile::new();
+                let out_file_baz = TmpFile::new();
+                let mut cfg = Config::with_targets(vec![
+                    target::exec("conflict-bar", cmd, &out_file_bar),
+                    target::exec("conflict-baz", cmd, &out_file_baz),
+                ]);
+                cfg.options.reconciliation_strategy = Strategy::Error;
+                let jam = get_jam(&cfg);
+                // When we attempt to execute 'b-u', 'b' by itself would
+                // be ambiguous.
+                // 'b-u' however distinguishes 'bruh' from 'conflict1'. We
+                // should therefore see bruh_file with the expected
+                // contents, but not conflict1_file.
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("c-b")),
+                    "given shortcut 'c-b' is ambiguous (i.e. is it 'conflict-bar' or 'conflict-baz'?)",
+                );
+                assert!(!check_file(out_file_bar));
+                assert!(!check_file(out_file_baz));
+            }
+
+            #[test]
+            fn failed_execution() {
+                let cmd = &format!("idontexist");
+                let out_file = TmpFile::new();
+                let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
+                let jam = get_jam(&cfg);
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("i")),
+                    "command failed to execute",
+                );
+                assert!(!check_file(out_file));
+            }
+
+            #[test]
+            fn executing_cmd_that_dne() {
+                let cmd = &format!("echo 'blah'");
+                let out_file = TmpFile::new();
+                let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
+                let jam = get_jam(&cfg);
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("z-z-z-z-z")),
+                    "no command for given shortcut 'z-z-z-z-z'",
+                );
+                assert!(!check_file(out_file));
+            }
+
+            #[test]
+            fn execution_failure_from_dep() {
+                let foo_cmd = &format!("echo 'foo'");
+                let bar_cmd = &format!("idontexist");
+                let foo_file = TmpFile::new();
+                let bar_file = TmpFile::new();
+                let cfg = Config::with_targets(vec![
+                    target::exec("bar", bar_cmd, &bar_file),
+                    target::exec_deps("foo", foo_cmd, &foo_file, vec!["bar"]),
+                ]);
+                let jam = get_jam(&cfg);
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("f")),
+                    "failed to execute dependency ('foo'): command failed to execute",
+                );
+                // Neither file should be created. The dependency will
+                // fail, which should make the dependent not even run.
+                assert!(!check_file(foo_file));
+                assert!(!check_file(bar_file));
+            }
+
+            #[test]
+            fn shortcut_without_reconciliation_suffix() {
+                let expected_message = "hello world";
+                let cmd = &format!("echo {expected_message}");
+                let breh_file = TmpFile::new();
+                let bruh_file = TmpFile::new();
+                let mut cfg = Config::with_targets(vec![
+                    target::exec("breh", cmd, &breh_file),
+                    target::exec("bruh", cmd, &bruh_file),
+                ]);
+                cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
+                let jam = get_jam(&cfg);
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("b")),
+                    "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh'?)",
+                );
+                assert!(!check_file(bruh_file));
+                assert!(!check_file(breh_file));
+            }
+
+            #[test]
+            fn shortcut_without_reconciliation_suffix_three_targets() {
+                let expected_message = "hello world";
+                let cmd = &format!("echo {expected_message}");
+                let breh_file = TmpFile::new();
+                let bruh_file = TmpFile::new();
+                let broh_file = TmpFile::new();
+                let mut cfg = Config::with_targets(vec![
+                    target::exec("breh", cmd, &breh_file),
+                    target::exec("bruh", cmd, &bruh_file),
+                    target::exec("broh", cmd, &broh_file),
+                ]);
+                cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
+                let jam = get_jam(&cfg);
+                check_err(
+                    jam.execute(Shortcut::from_shortcut_str("b")),
+                    "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh' or 'broh'?)",
+                );
+                assert!(!check_file(bruh_file));
+                assert!(!check_file(breh_file));
+                assert!(!check_file(broh_file));
+            }
         }
     }
 }

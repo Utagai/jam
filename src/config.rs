@@ -247,6 +247,18 @@ pub mod target {
             execute_kind: Some(ExecuteKind::Shell),
         }
     }
+
+    pub fn unexecable(name: &str) -> TargetCfg {
+        TargetCfg {
+            name: String::from(name),
+            shortcut_str: None,
+            help: None,
+            cmd: None,
+            targets: None,
+            deps: None,
+            execute_kind: Some(ExecuteKind::Shell),
+        }
+    }
 }
 
 #[cfg(test)]
