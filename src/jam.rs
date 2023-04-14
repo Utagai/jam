@@ -134,6 +134,11 @@ pub enum ExecError {
     Reconciliation { description: String },
     #[error("{description}")]
     Executor { description: String },
+    #[error("failed to execute dependency ('{dep_name}'): {err}")]
+    Dependency {
+        dep_name: String,
+        err: Box<ExecError>,
+    },
 }
 
 // ParseResult is not really very useful at the moment. However, it
@@ -359,7 +364,11 @@ impl<'a> Jam<'a> {
         let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
             let dep_logger = logger.new(o!("parent" => target.name.to_string()));
-            self.execute_target(&dep_logger, dep.1, depth + 1)?;
+            self.execute_target(&dep_logger, dep.1, depth + 1)
+                .map_err(|err| ExecError::Dependency {
+                    dep_name: target.name.to_string(),
+                    err: Box::new(err),
+                })?;
             num_deps_execed += 1;
         }
         if let Some(cmd) = target.cmd {
