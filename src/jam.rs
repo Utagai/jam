@@ -504,7 +504,7 @@ impl<'a> Jam<'a> {
                 shortcut,
                 conflict_msg: target_idxes
                     .iter()
-                    .map(|idx| String::from(self.dag[*idx].name))
+                    .map(|idx| format!("'{}'", self.dag[*idx].name))
                     .collect::<Vec<String>>()
                     .join(" or "),
             });
