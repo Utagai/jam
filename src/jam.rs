@@ -850,6 +850,10 @@ mod tests {
         }
     }
 
+    // The tests in this module involve the execution of shell commands.
+    // In the ideal case, we would not need to invoke the shell and
+    // use some mocking, however, the way ExecuteKind is right now
+    // makes that annoying.
     mod execution {
         use crate::{reconciler::Strategy, testutils::tmp::*};
 
@@ -869,8 +873,8 @@ mod tests {
 
         #[test]
         fn executes_dep() {
-            let foo_cmd = &format!("echo 'foo'");
-            let bar_cmd = &format!("echo 'bar'");
+            let foo_cmd = "echo 'foo'";
+            let bar_cmd = "echo 'bar'";
             let foo_file = TmpFile::new();
             let bar_file = TmpFile::new();
             let cfg = Config::with_targets(vec![
@@ -886,8 +890,8 @@ mod tests {
 
         #[test]
         fn executes_dep_only_when_ran_explicitly() {
-            let foo_cmd = &format!("echo 'foo'");
-            let bar_cmd = &format!("echo 'bar'");
+            let foo_cmd = "echo 'foo'";
+            let bar_cmd = "echo 'bar'";
             let foo_file = TmpFile::new();
             let bar_file = TmpFile::new();
             let cfg = Config::with_targets(vec![
@@ -916,9 +920,7 @@ mod tests {
                 name: String::from("blah"),
                 shortcut_str: None,
                 help: None,
-                cmd: Some(String::from(format!(
-                    "echo 'should not be ran!' > {out_file}"
-                ))),
+                cmd: Some(String::from("echo 'should not be ran!' > {out_file}")),
                 targets: None,
                 deps: None,
                 execute_kind: Some(ExecuteKind::DryRun),
@@ -967,7 +969,7 @@ mod tests {
 
             #[test]
             fn failed_reconciliation() {
-                let cmd = &format!("blah");
+                let cmd = "blah";
                 let out_file_bar = TmpFile::new();
                 let out_file_baz = TmpFile::new();
                 let mut cfg = Config::with_targets(vec![
@@ -991,7 +993,7 @@ mod tests {
 
             #[test]
             fn failed_execution() {
-                let cmd = &format!("idontexist");
+                let cmd = "idontexist";
                 let out_file = TmpFile::new();
                 let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
                 let jam = get_jam(&cfg);
@@ -1004,7 +1006,7 @@ mod tests {
 
             #[test]
             fn executing_cmd_that_dne() {
-                let cmd = &format!("echo 'blah'");
+                let cmd = "echo 'blah'";
                 let out_file = TmpFile::new();
                 let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
                 let jam = get_jam(&cfg);
@@ -1017,8 +1019,8 @@ mod tests {
 
             #[test]
             fn execution_failure_from_dep() {
-                let foo_cmd = &format!("echo 'foo'");
-                let bar_cmd = &format!("idontexist");
+                let foo_cmd = "echo 'foo'";
+                let bar_cmd = "idontexist";
                 let foo_file = TmpFile::new();
                 let bar_file = TmpFile::new();
                 let cfg = Config::with_targets(vec![

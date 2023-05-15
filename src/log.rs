@@ -4,7 +4,7 @@ use clap::ValueEnum;
 use serde::Deserialize;
 use slog::{o, Drain, Filter, Record};
 
-#[derive(ValueEnum, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(ValueEnum, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Critical,
@@ -13,18 +13,13 @@ pub enum Level {
     Info,
     Debug,
     Trace,
+    #[default]
     Disabled,
 }
 
 impl Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:#?}")
-    }
-}
-
-impl Default for Level {
-    fn default() -> Self {
-        Level::Disabled
     }
 }
 

@@ -139,17 +139,13 @@ mod tests {
     macro_rules! shortcut {
 		    ( $( $x:expr ),* ) => {
 		        {
-		            let mut temp_vec = Vec::new();
-		            $(
-		                temp_vec.push($x);
-		            )*
-		            Shortcut(temp_vec)
+		            Shortcut(vec![$($x),*])
 		        }
 		    };
 		}
 
     // Shorthand for Err(reconciliation_err()).
-    fn rerr(conflicts: &Vec<&str>, shortcut: &Shortcut) -> Result {
+    fn rerr(conflicts: &[&str], shortcut: &Shortcut) -> Result {
         Err(reconciliation_err(conflicts, shortcut))
     }
 

@@ -9,7 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use slog::Logger;
+use slog::{info, Logger};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -53,6 +53,7 @@ impl<'a> App<'a> {
     }
 
     fn reconcile(&mut self) {
+        info!(self.logger, "getting rid of unused lint for now");
         self.next = self
             .jam
             .reconcile(&self.prefix)
