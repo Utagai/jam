@@ -37,7 +37,7 @@ impl Executor {
 
         for kind in ExecuteKind::iter() {
             if !mapping.contains_key(&kind) {
-                panic!("unregistered executable kind: '{kind}'")
+                unreachable!("unregistered executable kind: '{kind}'")
             }
         }
 

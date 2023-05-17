@@ -35,7 +35,7 @@ impl Level {
                 Level::Info => slog::Level::Info,
                 Level::Debug => slog::Level::Debug,
                 Level::Trace => slog::Level::Trace,
-                Level::Disabled => panic!("disabled level should be handled in outer match"),
+                Level::Disabled => unreachable!("disabled level should be handled in outer match"),
             }),
         })
     }
