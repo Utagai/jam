@@ -6,17 +6,16 @@ use std::{
 use anyhow::{bail, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use slog::{info, Logger};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame, Terminal,
+    Frame, Terminal, TerminalOptions,
 };
 
 use crate::jam::{Jam, Lookup, Shortcut};
@@ -181,15 +180,15 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let main_regions = Layout::default()
         .direction(Direction::Vertical)
-        .margin(5)
+        .margin(1)
         // Make the error section always 3 pixels so it has enough
         // space for a single line of error message + 2 for the
         // border.
         .constraints(
             [
-                Constraint::Min(20),
-                Constraint::Length(3),
-                Constraint::Length(1),
+                Constraint::Max(10),   // 'Keys' window.
+                Constraint::Length(3), // Error section.
+                Constraint::Length(1), // Status line.
             ]
             .as_ref(),
         )
@@ -225,7 +224,7 @@ fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
 static PREFIX_MARKER: &str = "...";
 static ERROR_MARKER: &str = "???";
 
-fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
+fn key_text<'a>(app: &'a App) -> Vec<Line<'a>> {
     let target_strings_to_render: Vec<(&char, &str, &str)> = app
         .next
         .iter()
@@ -256,7 +255,7 @@ fn key_text<'a>(app: &'a App) -> Vec<Spans<'a>> {
         .map(|(k, target_string, connector)| {
             generate_spans_for_key(k, target_string, connector, max_target_string_len)
         })
-        .collect::<Vec<Spans>>();
+        .collect::<Vec<Line>>();
 
     spans_to_render
 }
@@ -266,7 +265,7 @@ fn generate_spans_for_key<'a>(
     target_string: &'a str,
     connector: &'a str,
     max_target_string_len: usize,
-) -> Spans<'a> {
+) -> Line<'a> {
     // So, we are using center alignment. The downside to this is that
     // the target keys are not all lined up when they are rendered. So
     // what we really want is to center the text and then align them
@@ -277,7 +276,7 @@ fn generate_spans_for_key<'a>(
     // left justified, while still being rendered in the center of the
     // screen-width paragraph.
     let padding = " ".repeat(max_target_string_len - target_string.len());
-    Spans::from(vec![
+    Line::from(vec![
         // ----
         // Key.
         Span::styled(
@@ -322,7 +321,7 @@ fn generate_spans_for_key<'a>(
 }
 
 fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
-    let error_para = Paragraph::new(Spans::from(app.errmsg.to_string())).block(
+    let error_para = Paragraph::new(Line::from(app.errmsg.to_string())).block(
         Block::default()
             .borders(Borders::ALL)
             .title(Span::styled(
@@ -383,10 +382,14 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
 pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: tui::Viewport::Inline(40),
+        },
+    )?;
 
     // create app and run it
     let tick_rate = Duration::from_millis(500);
@@ -399,8 +402,10 @@ pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
 
     // Bookkeeping stuff (cleanup):
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+
+    // Wipe away the UI we drew for jam.
+    terminal.clear()?;
 
     Ok(res)
 }
