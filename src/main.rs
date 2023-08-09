@@ -22,9 +22,8 @@ mod tui;
 #[cfg(test)]
 mod testutils;
 
-/// J̲am (isn't) A̲nother M̲ake.
-/// A task runner.
 #[derive(Parser, Debug)]
+#[command(about = "Jam (isn't) Another Make. A task runner.")]
 struct Cli {
     /// Show what jam _would_ do, but don't actually do it.
     #[clap(short, long, value_parser, default_value_t = false)]

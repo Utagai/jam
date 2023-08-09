@@ -34,6 +34,11 @@ impl<'a> From<&'a DesugaredTargetCfg> for Target<'a> {
 
 type IdxT = u32;
 pub type NodeIdx = NodeIndex<IdxT>;
+// NOTE: I wonder if we actually really need a trie. I think the more general
+// N-ary tree would work just as well given how we use this trie. We're not
+// actually making good use of the strengths of a trie, I think. In either case,
+// it shouldn't really change much in the code, even in terms of complexity, so
+// I'm just going to keep it here until I find a good enough reason to refactor.
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
