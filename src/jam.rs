@@ -177,7 +177,7 @@ impl<'a> Jam<'a> {
         // Discover all targets & add them as nodes to the DAG, and record their dependencies.
         // While we are doing this, we can also add the long and short names to their respective tries.
         for target_cfg in &cfg.targets {
-            Self::validate_target_cfg(target_cfg, &node_idxes)?;
+            validate_target_cfg(target_cfg, &node_idxes)?;
 
             let target = Target::from(target_cfg);
             // NOTE: I don't remember why, but I recall finding that
@@ -257,25 +257,10 @@ impl<'a> Jam<'a> {
         })
     }
 
-    fn validate_target_cfg(
-        cfg: &DesugaredTargetCfg,
-        node_idxes: &HashMap<&str, NodeIdx>,
-    ) -> ParseResult<()> {
-        if cfg.name.is_empty() {
-            bail!("cannot have an empty target name")
-        } else if cfg.name.contains('.') {
-            bail!("cannot have a '.' in a target name: '{}'", cfg.name)
-        } else if cfg.name.contains('?') {
-            bail!("cannot have a '?' in a target name: '{}'", cfg.name)
-        } else if node_idxes.contains_key(&cfg.name as &str) {
-            bail!("duplicate target name: '{}'", cfg.name)
-        } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
-            bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
-        }
-
-        Ok(())
-    }
-
+    /// Takes a shortcut and determines what all the possible subsequent
+    /// characters could be. Note that reconciliation is _not_ done here, and
+    /// this function can return a next-character that leads to an ambiguous
+    /// shortcut. Callers must handle this themselves. See tui.rs.
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
@@ -291,7 +276,8 @@ impl<'a> Jam<'a> {
             // exist:
             //   a
             //   ab
-            // The first call with the prefix being the empty shortcut will return [a,a] unless we de-dupe things.
+            // The first call with the prefix being the empty shortcut will
+            // return [a,a] unless we de-dupe things.
             keys.sort_unstable();
             keys.dedup();
             keys
@@ -303,6 +289,9 @@ impl<'a> Jam<'a> {
         }
     }
 
+    /// Takes a shortcut and returns an existence result. The result includes
+    /// the case where the shortcut leads to an ambiguity that must be
+    /// reconciled.
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
         match self.get_idxes(shortcut) {
             Ok(idxes) => {
@@ -326,21 +315,16 @@ impl<'a> Jam<'a> {
         }
     }
 
+    /// Takes a shortcut and returns the names of the potential targets it may
+    /// lead to if it were to be extended by a single character. This is similar
+    /// to next_keys(), but returns the names of the targets it leads to rather
+    /// than what the next characters to get to those targets are.
+    /// NOTE: This method is different from get_idxes() as well.  get_idxes
+    /// tries to find the nodes that a given shortcut maps to.  We don't
+    /// actually want that here. We want the things that this shortcut can
+    /// _eventually_ lead to.  AKA, we don't want just the shortcut itself, we
+    /// also want its children.
     pub fn get_children_names(&self, shortcut: &Shortcut) -> ExecResult<Vec<&'a str>> {
-        // NOTE: We do not directly dispatch to get_idxes because
-        // get_idxes tries to find the nodes that a given shortcut
-        // maps to.  We don't actually want that here. We want the
-        // things that this shortcut can _eventually_ lead to.
-        // AKA, we don't want just the shortcut itself, we also want
-        // its children.
-        //
-        // The only time get_idxes is what we want here is if the
-        // shortcut is the solution to a reconciliation, in which case
-        // it cannot have any children, it instead must be a leaf so
-        // it cannot lead to anything besides itself. This also means
-        // that if the given shortcut leads to nothing but itself,
-        // this function is indeed equivalent to calling get_idxes
-        // directly.
         Ok(
             if let Some(subtrie) = self.shortcuts.get_node(shortcut.iter()) {
                 subtrie
@@ -358,6 +342,41 @@ impl<'a> Jam<'a> {
         )
     }
 
+    /// Takes the given shortcut and determines what the reconciled subsequent
+    /// characters should be.
+    pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
+        let nidxes = self
+            .shortcuts
+            .get(shortcut.iter())
+            .ok_or(ExecError::NotFound {
+                shortcut: shortcut.clone(),
+            })?;
+        self.reconcile_with_nidxes(shortcut, nidxes)
+    }
+
+    pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
+        info!(self.logger, "executing");
+        let target_idxes = self.get_idxes(&shortcut)?;
+        if target_idxes.len() > 1 {
+            return Err(ExecError::Ambiguous {
+                shortcut,
+                conflict_msg: target_idxes
+                    .iter()
+                    .map(|idx| format!("'{}'", self.dag[*idx].name))
+                    .collect::<Vec<String>>()
+                    .join(" or "),
+            });
+        }
+        if let Some(nidx) = target_idxes.first() {
+            self.execute_target(&self.logger, *nidx, 0)
+        } else {
+            Err(ExecError::NotFound { shortcut })
+        }
+    }
+
+    // NOTE: We take a logger explicitly here instead of relying on self.logger
+    // because this function can execute recursively, and we want to encode that
+    // recursion into the logger's context as it goes on.
     fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> ExecResult<()> {
         let target = &self.dag[nidx];
         info!(
@@ -470,16 +489,6 @@ impl<'a> Jam<'a> {
         Ok(target_idxes)
     }
 
-    pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
-        let nidxes = self
-            .shortcuts
-            .get(shortcut.iter())
-            .ok_or(ExecError::NotFound {
-                shortcut: shortcut.clone(),
-            })?;
-        self.reconcile_with_nidxes(shortcut, nidxes)
-    }
-
     fn reconcile_with_nidxes(
         &self,
         shortcut: &Shortcut,
@@ -500,26 +509,25 @@ impl<'a> Jam<'a> {
             }),
         }
     }
+}
 
-    pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
-        info!(self.logger, "executing");
-        let target_idxes = self.get_idxes(&shortcut)?;
-        if target_idxes.len() > 1 {
-            return Err(ExecError::Ambiguous {
-                shortcut,
-                conflict_msg: target_idxes
-                    .iter()
-                    .map(|idx| format!("'{}'", self.dag[*idx].name))
-                    .collect::<Vec<String>>()
-                    .join(" or "),
-            });
-        }
-        if let Some(nidx) = target_idxes.first() {
-            self.execute_target(&self.logger, *nidx, 0)
-        } else {
-            Err(ExecError::NotFound { shortcut })
-        }
+fn validate_target_cfg(
+    cfg: &DesugaredTargetCfg,
+    node_idxes: &HashMap<&str, NodeIdx>,
+) -> ParseResult<()> {
+    if cfg.name.is_empty() {
+        bail!("cannot have an empty target name")
+    } else if cfg.name.contains('.') {
+        bail!("cannot have a '.' in a target name: '{}'", cfg.name)
+    } else if cfg.name.contains('?') {
+        bail!("cannot have a '?' in a target name: '{}'", cfg.name)
+    } else if node_idxes.contains_key(&cfg.name as &str) {
+        bail!("duplicate target name: '{}'", cfg.name)
+    } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
+        bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
