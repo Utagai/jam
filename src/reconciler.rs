@@ -1,13 +1,16 @@
-use std::{collections::HashSet, str::Chars};
+use std::{
+    collections::{HashMap, HashSet},
+    str::Chars,
+};
 
 use anyhow::anyhow;
 use serde::Deserialize;
 
-use crate::jam::{Shortcut, ShortcutTrie};
+use crate::jam::Shortcut;
 
 type Result = anyhow::Result<Vec<char>>;
 
-fn reconciliation_err(conflicts: &[&str], shortuct: &Shortcut) -> anyhow::Error {
+fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Error {
     anyhow!(
         "reconciliation failed for shortcut '{}'; still ambiguous (e.g. is it {}?)",
         shortuct,
@@ -15,13 +18,15 @@ fn reconciliation_err(conflicts: &[&str], shortuct: &Shortcut) -> anyhow::Error 
     )
 }
 
-type Reconciler = fn(shortcuts: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result;
+type Reconciler =
+    fn(shortcuts: &HashMap<String, Vec<&str>>, conflicts: &Vec<&str>, shortcut: &str) -> Result;
 
 fn first_nonmatch_reconciler(
-    shortcuts: &ShortcutTrie,
-    conflicts: &[&str],
-    shortcut: &Shortcut,
+    shortcuts: &HashMap<String, Vec<&str>>,
+    conflicts: &Vec<&str>,
+    shortcut_str: &str,
 ) -> Result {
+    let shortcut = Shortcut::from_shortcut_str(shortcut_str);
     // We now have an iterator in which every element is itself an
     // iterator over one conflicting target name. So, each of these iterators return one character each.
 
@@ -53,7 +58,7 @@ fn first_nonmatch_reconciler(
                         still_conflict = true;
                     } else {
                         let new_shortcut = shortcut.append(&ch);
-                        if shortcuts.get(new_shortcut.iter()).is_some() {
+                        if shortcuts.get(&new_shortcut.to_string()).is_some() {
                             // This shortcut extension may avoid conflicts here, but not elsewhere.
                             still_conflict = true;
                         }
@@ -62,7 +67,7 @@ fn first_nonmatch_reconciler(
                         reconciliation.push(ch);
                     }
                 }
-                None => return Err(reconciliation_err(conflicts, shortcut)), // One or more of these targets ran out of characters. We're done for.
+                None => return Err(reconciliation_err(conflicts, &shortcut)), // One or more of these targets ran out of characters. We're done for.
             }
         }
         // If we make it through the loop, we should have a solution
@@ -87,8 +92,15 @@ fn first_nonmatch_reconciler(
 /// targets that avoids any ambiguity.
 pub static FIRST_NONMATCH: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(_: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result {
-    Err(reconciliation_err(conflicts, shortcut))
+fn error_reconciler(
+    _: &HashMap<String, Vec<&str>>,
+    conflicts: &Vec<&str>,
+    shortcut_str: &str,
+) -> Result {
+    Err(reconciliation_err(
+        conflicts,
+        &Shortcut::from_shortcut_str(shortcut_str),
+    ))
 }
 
 // NOTE: We have to name this err because otherwise it conflicts with
@@ -116,16 +128,16 @@ impl Default for Strategy {
 
 pub fn reconcile(
     kind: Strategy,
-    shortcuts: &ShortcutTrie,
-    conflicts: &[&str],
-    shortcut: &Shortcut,
+    shortcuts: &HashMap<String, Vec<&str>>,
+    conflicts: &Vec<&str>,
+    shortcut_str: &str,
 ) -> Result {
     let reconciler: Reconciler = match kind {
         Strategy::Error => ERR_RECONCILER,
         Strategy::FirstNonMatch => FIRST_NONMATCH,
     };
 
-    reconciler(shortcuts, conflicts, shortcut)
+    reconciler(shortcuts, conflicts, shortcut_str)
 }
 
 #[cfg(test)]
@@ -134,33 +146,28 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use sequence_trie::SequenceTrie;
-
-    macro_rules! shortcut {
-		    ( $( $x:expr ),* ) => {
-		        {
-		            Shortcut(vec![$($x),*])
-		        }
-		    };
-		}
 
     // Shorthand for Err(reconciliation_err()).
-    fn rerr(conflicts: &[&str], shortcut: &Shortcut) -> Result {
-        Err(reconciliation_err(conflicts, shortcut))
+    fn rerr(conflicts: &Vec<&str>, shortcut_str: &str) -> Result {
+        Err(reconciliation_err(
+            conflicts,
+            &Shortcut::from_shortcut_str(shortcut_str),
+        ))
     }
 
     #[rstest]
-    #[case::simple(shortcut!['f'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
-    #[case::simple_overriden(shortcut!['z'], vec!["foo", "bar"], Ok(vec!['f', 'b']))]
-    #[case::simple_overriden_initially_same(shortcut!['z'], vec!["foo", "far"], Ok(vec!['o', 'a']))]
-    #[case::almost_same(shortcut!['f'], vec!["lalalah", "lalalaz"], Ok(vec!['h', 'z']))]
-    #[case::three_way_conflict(shortcut!['f'], vec!["foo", "faz", "fiz"], Ok(vec!['o', 'a', 'i']))]
-    #[case::three_way_conflict_almost_same(shortcut!['f'], vec!["lalalah", "lalalaz", "lalalab"], Ok(vec!['h', 'z', 'b']))]
-    #[case::many_conflicts_keep_almost_reconciling(shortcut!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
-    #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
-    fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
-        let trie = SequenceTrie::new();
-        let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
+    #[case::simple("f", vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::simple_overriden("z", vec!["foo", "bar"], Ok(vec!['f', 'b']))]
+    #[case::simple_overriden_initially_same("z", vec!["foo", "far"], Ok(vec!['o', 'a']))]
+    #[case::almost_same("f", vec!["lalalah", "lalalaz"], Ok(vec!['h', 'z']))]
+    #[case::three_way_conflict("f", vec!["foo", "faz", "fiz"], Ok(vec!['o', 'a', 'i']))]
+    #[case::three_way_conflict_almost_same("f", vec!["lalalah", "lalalaz", "lalalab"], Ok(vec!['h', 'z', 'b']))]
+    #[case::many_conflicts_keep_almost_reconciling("f", vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
+    #[case::unequal_length_conflicts_reconcile_in_time("f", vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
+    fn check(#[case] shortcut: &str, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
+        // TODO: Were we always testing with empty container? If so, we should probably fix this...
+        let map = HashMap::new();
+        let res = FIRST_NONMATCH(&map, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
             res.expect("expected no error, but got one")
@@ -168,13 +175,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::same_target_names(shortcut!['f'], vec!["foo", "foo"])]
-    #[case::one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool"])]
-    #[case::multiple_same_target_names(shortcut!['f'], vec!["foo", "foo", "foo", "foo"])]
-    #[case::multiple_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "baz", "quux"])]
-    #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
-    fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
-        let trie = SequenceTrie::new();
+    #[case::same_target_names("f", vec!["foo", "foo"])]
+    #[case::one_is_complete_prefix("f", vec!["foo", "fool"])]
+    #[case::multiple_same_target_names("f", vec!["foo", "foo", "foo", "foo"])]
+    #[case::multiple_one_is_complete_prefix("f", vec!["foo", "fool", "baz", "quux"])]
+    #[case::multiple_all_but_one_is_complete_prefix("f", vec!["foo", "fool", "fooli", "foolicooli"])]
+    fn check_err(#[case] shortcut: &str, #[case] conflicts: Vec<&str>) {
+        let trie = HashMap::new();
         let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),

@@ -1,7 +1,13 @@
+use std::{collections::HashMap, hash::Hash};
+
 use serde::Deserialize;
 use slog::KV;
 
-use crate::{executor::ExecuteKind, log, reconciler};
+use crate::{
+    executor::ExecuteKind,
+    log,
+    reconciler::{self, FIRST_NONMATCH},
+};
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
 /// re-written and simplified so that the parsing logic can be
@@ -108,16 +114,89 @@ pub struct Config {
 
 impl Config {
     pub fn desugar(self) -> DesugaredConfig {
-        DesugaredConfig {
+        let desugared_cfg = DesugaredConfig {
             options: self.options,
             targets: self
                 .targets
                 .into_iter()
                 .map(|t| Self::desugar_target(t, ""))
-                .collect::<Vec<Vec<DesugaredTargetCfg>>>()
+                .collect::<Vec<Vec<DesugaredTargetCfg>>>() // TODO: Double collect?!
                 .into_iter()
                 .flatten()
                 .collect(),
+        };
+        // Go through the desugared targets and create a map, mapping shortcut
+        // strings to their target names. Because we have not done any
+        // reconciliation yet, the number of target names for a given shortcut
+        // string may be >1. Successful reconciliation will bring that down to
+        // always =1.
+        let mut shortcut_str_to_names: HashMap<String, Vec<&str>> = HashMap::new();
+        for shortcut_name_tuple in desugared_cfg
+            .targets
+            .iter()
+            .map(|target| (target.shortcut_str.clone(), &target.name))
+        // TODO: Clone.
+        {
+            if let Some(target_names) = shortcut_str_to_names.get_mut(&shortcut_name_tuple.0) {
+                target_names.push(shortcut_name_tuple.1);
+            } else {
+                shortcut_str_to_names.insert(shortcut_name_tuple.0, vec![shortcut_name_tuple.1]);
+            }
+        }
+        let mut reconciled_map: HashMap<String, String> = HashMap::new();
+        for (shortcut_str, target_names) in &shortcut_str_to_names {
+            if target_names.len() > 1 {
+                // Conflict!
+                eprintln!(
+                    "Found conflict on shortcut string '{}' and target name: '{:?}'",
+                    shortcut_str, target_names
+                );
+                let reconciliation =
+                    FIRST_NONMATCH(&shortcut_str_to_names, &target_names, &shortcut_str)
+                        .expect("TODO");
+
+                for (i, char) in reconciliation.iter().enumerate() {
+                    reconciled_map.insert(
+                        target_names.get(i).expect("reconciliation returned more results than there were targets to reconcile").to_string(),
+                        format!("{}-{}", shortcut_str, char),
+                    );
+                    eprintln!(
+                        "Reconciliation: '{}' -> {}",
+                        format!("{}-{}", shortcut_str, char),
+                        target_names.get(i).unwrap(),
+                    );
+                }
+            } else {
+                // No conflict. Transfer & move on.
+                reconciled_map.insert(target_names[0].to_string(), shortcut_str.clone());
+                continue;
+            }
+        }
+
+        let reconciled_targets = desugared_cfg
+            .targets
+            .iter()
+            .map(|target| {
+                let reconciled_shortcut_str = reconciled_map
+                    .get(&target.name)
+                    .expect("TODO: This should never happen");
+                eprintln!(
+                    "Mapping shortcut '{}' to target '{}'",
+                    reconciled_shortcut_str, target.name
+                );
+                DesugaredTargetCfg {
+                    name: target.name.clone(),
+                    shortcut_str: reconciled_shortcut_str.to_string(),
+                    help: target.help.clone(),
+                    cmd: target.cmd.clone(),
+                    deps: target.deps.clone(),
+                    execute_kind: target.execute_kind,
+                }
+            })
+            .collect();
+        DesugaredConfig {
+            options: desugared_cfg.options,
+            targets: reconciled_targets,
         }
     }
 
@@ -127,6 +206,8 @@ impl Config {
         } else {
             sugar.name
         };
+        // TODO: Can we just inline this function call? That way we will only
+        // execute it when we need to.
         let shortcut_str = Self::name_to_short(&realized_name);
         let desugared = DesugaredTargetCfg {
             name: realized_name.clone(),
@@ -434,24 +515,7 @@ mod tests {
             );
         }
 
-        #[test]
-        fn automatic_of_multiple_conflicting_targets_no_reconciliation() {
-            let cfg = Config::with_targets(vec![
-                target::lone("bar"),
-                target::lone("baz"),
-                target::lone("bam"),
-                target::lone("barr"),
-            ]);
-            assert_eq!(
-                cfg,
-                DesugaredConfig::with_targets(vec![
-                    dstarget::lone("bar", "b"),
-                    dstarget::lone("baz", "b"),
-                    dstarget::lone("bam", "b"),
-                    dstarget::lone("barr", "b")
-                ]),
-            );
-        }
+        // TODO: We need to add tests for reconciliation here.
 
         #[test]
         fn override_respected() {

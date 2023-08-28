@@ -53,11 +53,12 @@ pub struct Jam<'a> {
 pub struct Shortcut(pub Vec<char>);
 
 impl Shortcut {
+    // TODO: Why is this pub?
     pub fn empty() -> Shortcut {
         Shortcut(vec![])
     }
 
-    fn from_shortcut_str(shortcut_str: &str) -> Shortcut {
+    pub fn from_shortcut_str(shortcut_str: &str) -> Shortcut {
         Shortcut(
             shortcut_str
                 .split('-')
@@ -124,6 +125,7 @@ impl Clone for Shortcut {
     }
 }
 
+// TODO: Should Ambiguous case take a list of strings and it intersperses itself?
 #[derive(Error, Debug, PartialEq)]
 pub enum ExecError {
     #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
@@ -344,14 +346,10 @@ impl<'a> Jam<'a> {
 
     /// Takes the given shortcut and determines what the reconciled subsequent
     /// characters should be.
-    pub fn reconcile(&self, shortcut: &Shortcut) -> ExecResult<Vec<char>> {
-        let nidxes = self
-            .shortcuts
-            .get(shortcut.iter())
-            .ok_or(ExecError::NotFound {
-                shortcut: shortcut.clone(),
-            })?;
-        self.reconcile_with_nidxes(shortcut, nidxes)
+    pub fn reconcile(&self, _: &Shortcut) -> ExecResult<Vec<char>> {
+        Err(ExecError::Reconciliation {
+            description: String::from("not implemented"),
+        })
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
@@ -427,63 +425,22 @@ impl<'a> Jam<'a> {
         match shortcuts_ref.get(shortcut.iter()) {
             Some(nidxes) => target_idxes = nidxes.to_vec(),
             None => {
-                debug!(self.logger, "found ambiguity, attempting reconciliation");
-                // In this case, it is possible that the user has
-                // actually specified a reconciliation character,
-                // which won't exist in the trie until we
-                // reconcile. So let's do that.
-                let (tail, key) = shortcut.tail();
-                // To see if this is correct, first, we expect the tail to exist:
-                match shortcuts_ref.get(tail.iter()) {
-                    Some(nidxes) => {
-                        // Secondly, not only must it exist, but it
-                        // must be referring to a shortcut that has
-                        // conflicts. If it has none, then the user
-                        // should just specify the tail.
-                        if nidxes.len() <= 1 {
-                            return Err(ExecError::NotFound {
-                                shortcut: Shortcut::from(shortcut),
-                            });
-                        }
-
-                        info!(self.logger, "reconciling with strategy"; o!("strategy" => self.opts.reconciliation_strategy.to_string()));
-
-                        // If it does indeed have a conflict,
-                        // then let's make sure that the specified
-                        // reconciliation key is a valid one:
-                        let reconciliation_keys = self.reconcile_with_nidxes(&tail, nidxes)?;
-
-                        // The returned reconciliation keys are 1:1
-                        // with the node indexes. i.e., the
-                        // reconciliation key at index i is the
-                        // reconciliation key for the conflicting
-                        // target at index i in nidxes.
-                        let nidx = match reconciliation_keys
+                if let Some(node) = shortcuts_ref.get_node(shortcut.iter()) {
+                    eprintln!("Child count: {}", node.children().iter().count());
+                    // If the shortcut is found as a subtrie trie, then it is an
+                    // ambiguity.
+                    return Err(ExecError::Ambiguous {
+                        shortcut: shortcut.clone(),
+                        conflict_msg: node
+                            .children()
                             .iter()
-                            .position(|reconciliation_key| Some(reconciliation_key) == key.as_ref())
-                        {
-                            // If it isn't there, then this reconciliation
-                            // key is not a good one and we should error.
-                            None => {
-                                return Err(ExecError::NotFound {
-                                    shortcut: Shortcut::from(shortcut),
-                                });
-                            }
-                            // However, and finally, if it is good, then
-                            // let's identify which nidx we are looking at
-                            // and return just that one:
-                            Some(pos) => nidxes[pos],
-                        };
-
-                        debug!(self.logger, "reconciled");
-                        target_idxes = vec![nidx];
-                    }
-                    None => {
-                        return Err(ExecError::NotFound {
-                            shortcut: Shortcut::from(shortcut),
-                        });
-                    }
+                            .filter(|node| node.value().is_some())
+                            .map(|node| format!("'{}'", self.dag[node.value().unwrap()[0]].name))
+                            .intersperse(String::from(" or "))
+                            .collect(),
+                    });
                 }
+                panic!("reconciliation not implemented");
             }
         };
         Ok(target_idxes)
@@ -494,20 +451,9 @@ impl<'a> Jam<'a> {
         shortcut: &Shortcut,
         nidxes: &[NodeIdx],
     ) -> ExecResult<Vec<char>> {
-        match reconcile(
-            self.opts.reconciliation_strategy,
-            &self.shortcuts,
-            &nidxes
-                .iter()
-                .map(|nidx| self.dag[*nidx].name)
-                .collect::<Vec<&str>>(),
-            shortcut,
-        ) {
-            Ok(keys) => Ok(keys),
-            Err(err) => Err(ExecError::Reconciliation {
-                description: err.to_string(),
-            }),
-        }
+        Err(ExecError::Reconciliation {
+            description: String::from("not implemented"),
+        })
     }
 }
 
