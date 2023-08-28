@@ -7,7 +7,7 @@ use crate::{
     error::{ExecError, ExecResult},
     executor::ExecuteKind,
     log,
-    reconciler::{self, FIRST_NONMATCH},
+    reconciler::{self, reconcile, FIRST_NONMATCH},
 };
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
@@ -115,10 +115,10 @@ pub struct Config {
 
 impl Config {
     pub fn desugar(self) -> ExecResult<DesugaredConfig> {
-        // NOTE: It may be tempting to want to merge this and the subsequent
-        // loop for setting up reconciliation. However, note that desugaring is
-        // a recursive process that flattens the config, and this flattening is
-        // essential for knowing the final shortcut strings pre-reconciliation.
+        // NOTE: It may be tempting to want to merge this into reconciliation.
+        // However, note that desugaring is a recursive process that flattens
+        // the config, and this flattening is essential for knowing the final
+        // shortcut strings pre-reconciliation.
         // As an example:
         //   foo:
         //      bar:
@@ -135,6 +135,52 @@ impl Config {
                 .collect(),
         };
 
+        // Reconcile the config.
+        let reconciled_targets = Self::reconcile(desugared_cfg.targets.as_ref())?;
+
+        Ok(DesugaredConfig {
+            options: desugared_cfg.options,
+            targets: reconciled_targets,
+        })
+    }
+
+    fn desugar_target<T: AsRef<str>>(sugar: TargetCfg, prefix: T) -> Vec<DesugaredTargetCfg> {
+        let realized_name = if !prefix.as_ref().is_empty() {
+            format!("{}-{}", prefix.as_ref(), sugar.name)
+        } else {
+            sugar.name
+        };
+        let shortcut_str = Self::name_to_short(&realized_name);
+        let desugared = DesugaredTargetCfg {
+            name: realized_name.clone(),
+            shortcut_str: sugar.shortcut_str.unwrap_or(shortcut_str),
+            help: sugar.help.unwrap_or("no help provided".to_string()),
+            cmd: sugar.cmd,
+            deps: sugar.deps.unwrap_or(vec![]),
+            execute_kind: sugar.execute_kind.unwrap_or(ExecuteKind::Shell),
+        };
+        // This will hold all the subtargets underneath the current
+        // target. We are effectively flattening the config here as
+        // part of our desugaring process.
+        let mut desugared_targets = vec![desugared];
+        if let Some(targets) = sugar.targets {
+            for target in targets {
+                let desugared_subtargets = Config::desugar_target(target, &realized_name);
+                // Note that the first element is always the root
+                // element of the recursion, so the first element of
+                // desugared_subtargets is going to be the desugared
+                // target. So, update the deps of the current parent
+                // as well.
+                desugared_targets[0]
+                    .deps
+                    .push(desugared_subtargets[0].name.to_string());
+                desugared_targets.extend(desugared_subtargets);
+            }
+        }
+        desugared_targets
+    }
+
+    fn reconcile(targets: &Vec<DesugaredTargetCfg>) -> ExecResult<Vec<DesugaredTargetCfg>> {
         // Go through the desugared targets and create a map, mapping shortcut
         // strings to their target names. Because we have not done any
         // reconciliation yet, the number of target names for a given shortcut
@@ -147,11 +193,7 @@ impl Config {
         // NOTE: This map is not necessary, it just trades off memory for speed
         // by saving us an extra loop.
         let mut name_to_target: HashMap<&str, &DesugaredTargetCfg> = HashMap::new();
-        for (shortcut_str, target) in desugared_cfg
-            .targets
-            .iter()
-            .map(|target| (&target.shortcut_str, target))
-        {
+        for (shortcut_str, target) in targets.iter().map(|target| (&target.shortcut_str, target)) {
             if let Some(target_names) = shortcut_to_names.get_mut(shortcut_str.as_str()) {
                 target_names.push(&target.name);
             } else {
@@ -208,46 +250,7 @@ impl Config {
             }
         }
 
-        Ok(DesugaredConfig {
-            options: desugared_cfg.options,
-            targets: reconciled_targets,
-        })
-    }
-
-    fn desugar_target<T: AsRef<str>>(sugar: TargetCfg, prefix: T) -> Vec<DesugaredTargetCfg> {
-        let realized_name = if !prefix.as_ref().is_empty() {
-            format!("{}-{}", prefix.as_ref(), sugar.name)
-        } else {
-            sugar.name
-        };
-        let shortcut_str = Self::name_to_short(&realized_name);
-        let desugared = DesugaredTargetCfg {
-            name: realized_name.clone(),
-            shortcut_str: sugar.shortcut_str.unwrap_or(shortcut_str),
-            help: sugar.help.unwrap_or("no help provided".to_string()),
-            cmd: sugar.cmd,
-            deps: sugar.deps.unwrap_or(vec![]),
-            execute_kind: sugar.execute_kind.unwrap_or(ExecuteKind::Shell),
-        };
-        // This will hold all the subtargets underneath the current
-        // target. We are effectively flattening the config here as
-        // part of our desugaring process.
-        let mut desugared_targets = vec![desugared];
-        if let Some(targets) = sugar.targets {
-            for target in targets {
-                let desugared_subtargets = Config::desugar_target(target, &realized_name);
-                // Note that the first element is always the root
-                // element of the recursion, so the first element of
-                // desugared_subtargets is going to be the desugared
-                // target. So, update the deps of the current parent
-                // as well.
-                desugared_targets[0]
-                    .deps
-                    .push(desugared_subtargets[0].name.to_string());
-                desugared_targets.extend(desugared_subtargets);
-            }
-        }
-        desugared_targets
+        Ok(reconciled_targets)
     }
 
     fn name_to_short<T: AsRef<str> + std::fmt::Display>(name: T) -> String {
