@@ -415,7 +415,9 @@ impl<'a> Jam<'a> {
                             .collect(),
                     });
                 }
-                panic!("reconciliation not implemented");
+                return Err(ExecError::NotFound {
+                    shortcut: Shortcut::from(shortcut),
+                });
             }
         };
         Ok(target_idxes)
