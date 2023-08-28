@@ -9,6 +9,7 @@ use executor::Executor;
 use jam::{Jam, Shortcut};
 
 mod config;
+mod error;
 mod executor;
 mod jam;
 mod log;
@@ -57,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     let config_path = "./rsrc/simple.yaml";
     let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
 
-    let desugared_cfg = cfg.desugar();
+    let desugared_cfg = cfg.desugar()?;
 
     let cli = Cli::parse();
 

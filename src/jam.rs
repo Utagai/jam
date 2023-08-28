@@ -4,12 +4,11 @@ use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
 use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
-use thiserror::Error;
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
+    error::{ExecError, ExecResult},
     executor::{ExecuteKind, Executor},
-    reconciler::reconcile,
 };
 
 struct Target<'a> {
@@ -125,29 +124,6 @@ impl Clone for Shortcut {
     }
 }
 
-// TODO: Should Ambiguous case take a list of strings and it intersperses itself?
-#[derive(Error, Debug, PartialEq)]
-pub enum ExecError {
-    #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
-    Ambiguous {
-        shortcut: Shortcut,
-        conflict_msg: String,
-    },
-    #[error("no command for given shortcut '{shortcut}'")]
-    NotFound { shortcut: Shortcut },
-    #[error("target '{name}' has no executable function")]
-    CannotExec { name: String },
-    #[error("{description}")]
-    Reconciliation { description: String },
-    #[error("{description}")]
-    Executor { description: String },
-    #[error("failed to execute dependency ('{dep_name}'): {err}")]
-    Dependency {
-        dep_name: String,
-        err: Box<ExecError>,
-    },
-}
-
 // ParseResult is not really very useful at the moment. However, it
 // may be something that we wish to embellish further in the
 // future. This type can allow us to do that and save a bit of
@@ -155,7 +131,6 @@ pub enum ExecError {
 // into two distinct classes errors: parsing errors & execution
 // errors.
 type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
-type ExecResult<T> = Result<T, ExecError>;
 
 #[derive(Debug, PartialEq)]
 pub enum Lookup {
@@ -546,7 +521,8 @@ mod tests {
                 },
                 targets,
             }
-            .desugar();
+            .desugar()
+            .unwrap();
             if let Err(err) = Jam::new(&test_logger(), Executor::new(), &cfg) {
                 assert_eq!(format!("{err}").trim(), expected_err)
             } else {
@@ -1033,7 +1009,7 @@ mod tests {
                 let jam = get_jam(&cfg);
                 check_err(
                     jam.execute(Shortcut::from_shortcut_str("b")),
-                    "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh' or 'broh'?)",
+                    "given shortcut 'b' is ambiguous (i.e. is it 'broh' or 'breh' or 'broh'?)",
                 );
                 assert!(!check_file(bruh_file));
                 assert!(!check_file(breh_file));

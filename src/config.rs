@@ -1,9 +1,10 @@
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 use serde::Deserialize;
 use slog::KV;
 
 use crate::{
+    error::{ExecError, ExecResult},
     executor::ExecuteKind,
     log,
     reconciler::{self, FIRST_NONMATCH},
@@ -113,7 +114,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn desugar(self) -> DesugaredConfig {
+    pub fn desugar(self) -> ExecResult<DesugaredConfig> {
         // NOTE: It may be tempting to want to merge this and the subsequent
         // loop for setting up reconciliation. However, note that desugaring is
         // a recursive process that flattens the config, and this flattening is
@@ -170,35 +171,47 @@ impl Config {
                     shortcut_str, target_names
                 );
                 let reconciliation =
-                    FIRST_NONMATCH(&shortcut_to_names, &target_names, &shortcut_str).expect("TODO");
+                    FIRST_NONMATCH(&shortcut_to_names, &target_names, &shortcut_str).map_err(
+                        |err| ExecError::Reconciliation {
+                            description: err.to_string(),
+                        },
+                    )?;
 
                 for (i, char) in reconciliation.iter().enumerate() {
                     let mut target = name_to_target
-                        .get_mut(target_names.get(i).unwrap())
-                        .unwrap()
+                        .get_mut(
+                            target_names
+                                .get(i)
+                                .expect("reconciliation returned too few results"),
+                        )
+                        .expect("name_to_target should have all names")
                         .clone();
                     target.shortcut_str = format!("{}-{}", shortcut_str, char);
                     reconciled_targets.push(target);
                     eprintln!(
                         "Reconciliation: '{}' -> {}",
                         format!("{}-{}", shortcut_str, char),
-                        target_names.get(i).unwrap(),
+                        target_names.get(i).expect("DEBUG"),
                     );
                 }
             } else {
                 // No conflict. Transfer & move on.
                 let target = name_to_target
-                    .get_mut(target_names.get(0).unwrap())
-                    .unwrap();
+                    .get_mut(
+                        target_names
+                            .first()
+                            .expect("target_names should not be empty"),
+                    )
+                    .expect("name_to_target should have all names");
                 reconciled_targets.push(target.clone());
                 continue;
             }
         }
 
-        DesugaredConfig {
+        Ok(DesugaredConfig {
             options: desugared_cfg.options,
             targets: reconciled_targets,
-        }
+        })
     }
 
     fn desugar_target<T: AsRef<str>>(sugar: TargetCfg, prefix: T) -> Vec<DesugaredTargetCfg> {
@@ -340,6 +353,7 @@ impl Config {
             targets,
         }
         .desugar()
+        .unwrap()
     }
 }
 
