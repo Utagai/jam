@@ -120,8 +120,6 @@ impl Config {
                 .targets
                 .into_iter()
                 .map(|t| Self::desugar_target(t, ""))
-                .collect::<Vec<Vec<DesugaredTargetCfg>>>() // TODO: Double collect?!
-                .into_iter()
                 .flatten()
                 .collect(),
         };
@@ -516,6 +514,8 @@ mod tests {
         }
 
         // TODO: We need to add tests for reconciliation here.
+        // NOTE: We can probably just transfer over the same cases we were
+        // presumably testing in jam.rs.
 
         #[test]
         fn override_respected() {
