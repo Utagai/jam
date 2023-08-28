@@ -8,7 +8,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use slog::{info, Logger};
+use slog::Logger;
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -25,11 +25,10 @@ struct App<'a> {
     prefix: Shortcut,
     next: Vec<char>,
     errmsg: String,
-    logger: Logger,
 }
 
 impl<'a> App<'a> {
-    fn new(logger: Logger, jam: &'a Jam<'a>) -> App<'a> {
+    fn new(jam: &'a Jam<'a>) -> App<'a> {
         let initial_prefix = Shortcut::empty();
         let next_keys = jam.next_keys(&initial_prefix);
         App {
@@ -37,7 +36,6 @@ impl<'a> App<'a> {
             prefix: initial_prefix,
             next: next_keys,
             errmsg: String::from(""),
-            logger,
         }
     }
 
@@ -49,14 +47,6 @@ impl<'a> App<'a> {
     fn reverse(&mut self) {
         self.prefix.pop();
         self.next = self.jam.next_keys(&self.prefix)
-    }
-
-    fn reconcile(&mut self) {
-        info!(self.logger, "getting rid of unused lint for now");
-        self.next = self
-            .jam
-            .reconcile(&self.prefix)
-            .expect("failed to reconcile");
     }
 
     fn predict_key(&self, key: char) -> Result<Vec<&str>> {
@@ -130,17 +120,11 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
     match key.code {
         KeyCode::Char('.') => match app.jam.lookup(&app.prefix) {
             Lookup::Found => Ok(Response::Execute),
-            Lookup::Conflict => {
-                app.reconcile();
-                Ok(Response::Request)
-            }
+            Lookup::Conflict => Ok(Response::Request),
             Lookup::NotFound => Ok(Response::ShowError(format!(
                 "current prefix '{}' does not map to a command",
                 app.prefix
             ))),
-            Lookup::ReconciliationFailure(_) => {
-                unreachable!("reconciliation failure is not possible on shortcut termination")
-            }
         },
         KeyCode::Backspace => {
             app.reverse();
@@ -156,13 +140,14 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                         if nothing_next && lookup_res == Lookup::Found {
                             return Ok(Response::Execute);
                         } else if nothing_next && lookup_res == Lookup::Conflict {
-                            app.reconcile();
+                            // I think in this case, we need to show some kind
+                            // of error that we need more info?
+                            panic!("TODO")
                         }
 
                         Ok(Response::Request)
                     }
                     Lookup::NotFound => unreachable!("tui mode prefixes should always exist"),
-                    Lookup::ReconciliationFailure(errmsg) => Ok(Response::ShowError(errmsg)),
                 }
             } else {
                 Ok(Response::ShowError(format!("key {key:?} leads nowhere",)))
@@ -379,7 +364,7 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     f.render_widget(helptext, status_bar_regions[2]);
 }
 
-pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
+pub fn render<'a>(jam: &'a Jam<'a>) -> Result<Shortcut> {
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
     let stdout = io::stdout();
@@ -395,7 +380,7 @@ pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     let tick_rate = Duration::from_millis(500);
     // Create new 'app'. Really, this is just a bag of state to carry across 'ticks'.
     // Each tick is basically an entire refresh of the UI (see above 'tick_rate').
-    let app = App::new(logger, jam);
+    let app = App::new(jam);
     // Run app runs the tick loop that constantly refreshes the loop based on tick_rate.
     // It relies on the ui() function to recreate the UI. The UI takes app to help it decide what to draw.
     let res = run_app(&mut terminal, app, tick_rate)?;

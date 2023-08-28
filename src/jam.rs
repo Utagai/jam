@@ -77,13 +77,6 @@ impl Shortcut {
         Shortcut(new_vec)
     }
 
-    // NOTE: Same thing as described for append() above is worth considering here.
-    pub fn tail(&self) -> (Shortcut, Option<char>) {
-        let mut new_vec = self.0.clone();
-        let key = new_vec.pop();
-        (Shortcut(new_vec), key)
-    }
-
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -136,7 +129,6 @@ type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 pub enum Lookup {
     NotFound,
     Found,
-    ReconciliationFailure(String),
     Conflict,
 }
 
@@ -176,21 +168,6 @@ impl<'a> Jam<'a> {
             let node_idx = dag.add_node(target);
 
             // And add it to the trie under its shortcut.
-            // A natural question to ask here is about conflicts
-            // of shortcuts. For example, if two targets both have
-            // the shortcut `t-a`, how can we disambiguate them? The
-            // approach we take here is actually laziness. The
-            // trie actually maps `t-a` to _two_ different targets
-            // in this case, and the idea is that at 'runtime',
-            // when the user has keyed in `t-a`, we will detect a
-            // vector of length > 1, and _at that time_ we will
-            // find their common prefix and use the remaining
-            // characters (or '.') to disambiguate. This is
-            // actually going to be more efficient, because doing
-            // the reconciliation here pays the cost on _every_
-            // jam startup, but the lazy approach only does it if
-            // the user is going to use an ambiguous shortcut, which
-            // may only be for very rare targets!
             if let Some(idxes) = trie.get_mut(target_shortcut.iter()) {
                 idxes.push(node_idx);
             } else {
@@ -235,9 +212,7 @@ impl<'a> Jam<'a> {
     }
 
     /// Takes a shortcut and determines what all the possible subsequent
-    /// characters could be. Note that reconciliation is _not_ done here, and
-    /// this function can return a next-character that leads to an ambiguous
-    /// shortcut. Callers must handle this themselves. See tui.rs.
+    /// characters could be.
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
@@ -266,9 +241,9 @@ impl<'a> Jam<'a> {
         }
     }
 
-    /// Takes a shortcut and returns an existence result. The result includes
-    /// the case where the shortcut leads to an ambiguity that must be
-    /// reconciled.
+    /// Takes a shortcut and returns an existence result.
+    /// TODO: With reconciliation changes, this should probably just be renamed
+    /// to exists() -> bool. However, what to do with Conflict?
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
         match self.get_idxes(shortcut) {
             Ok(idxes) => {
@@ -277,17 +252,13 @@ impl<'a> Jam<'a> {
                 } else if idxes.len() == 1 {
                     Lookup::Found
                 } else {
-                    // Multiple.
-                    Lookup::Conflict
+                    panic!("TODO")
                 }
             }
             Err(ExecError::Ambiguous {
                 shortcut: _,
                 conflict_msg: _,
             }) => Lookup::Conflict,
-            Err(ExecError::Reconciliation { description }) => {
-                Lookup::ReconciliationFailure(description)
-            }
             Err(_) => Lookup::NotFound,
         }
     }
@@ -311,20 +282,14 @@ impl<'a> Jam<'a> {
                     .collect()
             } else {
                 // If the shortcut isn't found in the trie, it is likely a conflict.
-                self.get_idxes(shortcut)? // Run get_idxes to see if reconciliation gets us anything.
+                // TODO: What happens in this case? Is it always NotFound since
+                // reconciliation is removed?
+                self.get_idxes(shortcut)?
                     .iter() // Iterate them.
                     .map(|idx| self.dag[*idx].name) // And map them to their names.
                     .collect()
             },
         )
-    }
-
-    /// Takes the given shortcut and determines what the reconciled subsequent
-    /// characters should be.
-    pub fn reconcile(&self, _: &Shortcut) -> ExecResult<Vec<char>> {
-        Err(ExecError::Reconciliation {
-            description: String::from("not implemented"),
-        })
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
@@ -421,16 +386,6 @@ impl<'a> Jam<'a> {
             }
         };
         Ok(target_idxes)
-    }
-
-    fn reconcile_with_nidxes(
-        &self,
-        shortcut: &Shortcut,
-        nidxes: &[NodeIdx],
-    ) -> ExecResult<Vec<char>> {
-        Err(ExecError::Reconciliation {
-            description: String::from("not implemented"),
-        })
     }
 }
 

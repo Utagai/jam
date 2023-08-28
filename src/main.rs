@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     let shortcut = if !cli.shortcut.is_empty() {
         Shortcut(cli.shortcut)
     } else {
-        tui::render(logger, &jam)?
+        tui::render(&jam)?
     };
 
     if shortcut.len() > 0 {

@@ -8,7 +8,7 @@ use crate::{
     error::{ExecError, ExecResult},
     executor::ExecuteKind,
     log,
-    reconciler::{self, reconcile, FIRST_NONMATCH},
+    reconciler::{self, FIRST_NONMATCH},
 };
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
@@ -213,6 +213,7 @@ impl Config {
                     "Found conflict on shortcut string '{}' and target name: '{:?}'",
                     shortcut_str, target_names
                 );
+                // TODO: We should use the specified reconciliation strategy here.
                 let reconciliation =
                     FIRST_NONMATCH(&shortcut_to_names, &target_names, &shortcut_str).map_err(
                         |err| ExecError::Reconciliation {
@@ -533,8 +534,8 @@ mod tests {
         }
 
         // TODO: We need to add tests for reconciliation here.
-        // NOTE: We can probably just transfer over the same cases we were
-        // presumably testing in jam.rs.
+        // The main complexity is in reconciler.rs, we just need to test error
+        // propagation basically and a non-trivial but otherwise simple case.
 
         #[test]
         fn override_respected() {
