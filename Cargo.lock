@@ -457,6 +457,7 @@ dependencies = [
  "crossterm",
  "daggy",
  "either",
+ "indexmap 2.0.0",
  "lazy_static",
  "pretty_assertions",
  "ratatui",

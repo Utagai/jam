@@ -1,9 +1,7 @@
-use std::{
-    collections::{HashMap, HashSet},
-    str::Chars,
-};
+use std::{collections::HashSet, str::Chars};
 
 use anyhow::anyhow;
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::jam::Shortcut;
@@ -19,10 +17,10 @@ fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Err
 }
 
 type Reconciler =
-    fn(shortcuts: &HashMap<&str, Vec<&str>>, conflicts: &Vec<&str>, shortcut: &str) -> Result;
+    fn(shortcuts: &IndexMap<&str, Vec<&str>>, conflicts: &Vec<&str>, shortcut: &str) -> Result;
 
 fn first_nonmatch_reconciler(
-    shortcuts: &HashMap<&str, Vec<&str>>,
+    shortcuts: &IndexMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {
@@ -93,7 +91,7 @@ fn first_nonmatch_reconciler(
 pub static FIRST_NONMATCH: Reconciler = first_nonmatch_reconciler;
 
 fn error_reconciler(
-    _: &HashMap<&str, Vec<&str>>,
+    _: &IndexMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {
@@ -128,7 +126,7 @@ impl Default for Strategy {
 
 pub fn reconcile(
     kind: Strategy,
-    shortcuts: &HashMap<&str, Vec<&str>>,
+    shortcuts: &IndexMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {
@@ -166,7 +164,7 @@ mod tests {
     #[case::unequal_length_conflicts_reconcile_in_time("f", vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] shortcut: &str, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         // TODO: Were we always testing with empty container? If so, we should probably fix this...
-        let map = HashMap::new();
+        let map = IndexMap::new();
         let res = FIRST_NONMATCH(&map, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
@@ -181,7 +179,7 @@ mod tests {
     #[case::multiple_one_is_complete_prefix("f", vec!["foo", "fool", "baz", "quux"])]
     #[case::multiple_all_but_one_is_complete_prefix("f", vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] shortcut: &str, #[case] conflicts: Vec<&str>) {
-        let trie = HashMap::new();
+        let trie = IndexMap::new();
         let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
         assert_eq!(
             format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),

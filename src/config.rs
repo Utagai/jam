@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 use slog::KV;
 
@@ -189,7 +190,7 @@ impl Config {
         // We need to do this first in a separate loop because we can't
         // reconcile with local information. We need global information, which
         // we create a data structure for here.
-        let mut shortcut_to_names: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut shortcut_to_names: IndexMap<&str, Vec<&str>> = IndexMap::new();
         // NOTE: This map is not necessary, it just trades off memory for speed
         // by saving us an extra loop.
         let mut name_to_target: HashMap<&str, &DesugaredTargetCfg> = HashMap::new();
