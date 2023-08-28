@@ -19,10 +19,10 @@ fn reconciliation_err(conflicts: &Vec<&str>, shortuct: &Shortcut) -> anyhow::Err
 }
 
 type Reconciler =
-    fn(shortcuts: &HashMap<String, Vec<&str>>, conflicts: &Vec<&str>, shortcut: &str) -> Result;
+    fn(shortcuts: &HashMap<&str, Vec<&str>>, conflicts: &Vec<&str>, shortcut: &str) -> Result;
 
 fn first_nonmatch_reconciler(
-    shortcuts: &HashMap<String, Vec<&str>>,
+    shortcuts: &HashMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {
@@ -58,7 +58,7 @@ fn first_nonmatch_reconciler(
                         still_conflict = true;
                     } else {
                         let new_shortcut = shortcut.append(&ch);
-                        if shortcuts.get(&new_shortcut.to_string()).is_some() {
+                        if shortcuts.get(new_shortcut.to_string().as_str()).is_some() {
                             // This shortcut extension may avoid conflicts here, but not elsewhere.
                             still_conflict = true;
                         }
@@ -93,7 +93,7 @@ fn first_nonmatch_reconciler(
 pub static FIRST_NONMATCH: Reconciler = first_nonmatch_reconciler;
 
 fn error_reconciler(
-    _: &HashMap<String, Vec<&str>>,
+    _: &HashMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {
@@ -128,7 +128,7 @@ impl Default for Strategy {
 
 pub fn reconcile(
     kind: Strategy,
-    shortcuts: &HashMap<String, Vec<&str>>,
+    shortcuts: &HashMap<&str, Vec<&str>>,
     conflicts: &Vec<&str>,
     shortcut_str: &str,
 ) -> Result {

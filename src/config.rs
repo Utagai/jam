@@ -128,14 +128,13 @@ impl Config {
         // reconciliation yet, the number of target names for a given shortcut
         // string may be >1. Successful reconciliation will bring that down to
         // always =1.
-        let mut shortcut_str_to_names: HashMap<String, Vec<&str>> = HashMap::new();
+        let mut shortcut_str_to_names: HashMap<&str, Vec<&str>> = HashMap::new();
         for (shortcut_str, target_name) in desugared_cfg
             .targets
             .iter()
-            .map(|target| (target.shortcut_str.clone(), &target.name))
-        // TODO: Clone.
+            .map(|target| (&target.shortcut_str, &target.name))
         {
-            if let Some(target_names) = shortcut_str_to_names.get_mut(&shortcut_str) {
+            if let Some(target_names) = shortcut_str_to_names.get_mut(shortcut_str.as_str()) {
                 target_names.push(target_name);
             } else {
                 shortcut_str_to_names.insert(shortcut_str, vec![target_name]);
@@ -166,7 +165,8 @@ impl Config {
                 }
             } else {
                 // No conflict. Transfer & move on.
-                reconciled_map.insert(target_names[0].to_string(), shortcut_str.clone());
+                // TODO: Clone.
+                reconciled_map.insert(target_names[0].to_string(), shortcut_str.to_string());
                 continue;
             }
         }
