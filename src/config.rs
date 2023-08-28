@@ -23,7 +23,7 @@ use crate::{
 /// * Subtarget sections are flattened (post-prefixing) into deps.
 /// * Removing Option types and replacing them with guaranteed values
 ///  when possible.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DesugaredTargetCfg {
     pub name: String,
     pub shortcut_str: String,
@@ -114,6 +114,16 @@ pub struct Config {
 
 impl Config {
     pub fn desugar(self) -> DesugaredConfig {
+        // NOTE: It may be tempting to want to merge this and the subsequent
+        // loop for setting up reconciliation. However, note that desugaring is
+        // a recursive process that flattens the config, and this flattening is
+        // essential for knowing the final shortcut strings pre-reconciliation.
+        // As an example:
+        //   foo:
+        //      bar:
+        // In this case, the shortcut string for bar is "f-b". However, if we
+        // merge the loops then we will only be able to know that the shortcut
+        // string for bar is "<something>-b".
         let desugared_cfg = DesugaredConfig {
             options: self.options,
             targets: self
@@ -123,25 +133,36 @@ impl Config {
                 .flatten()
                 .collect(),
         };
+
         // Go through the desugared targets and create a map, mapping shortcut
         // strings to their target names. Because we have not done any
         // reconciliation yet, the number of target names for a given shortcut
         // string may be >1. Successful reconciliation will bring that down to
         // always =1.
-        let mut shortcut_str_to_names: HashMap<&str, Vec<&str>> = HashMap::new();
-        for (shortcut_str, target_name) in desugared_cfg
+        // We need to do this first in a separate loop because we can't
+        // reconcile with local information. We need global information, which
+        // we create a data structure for here.
+        let mut shortcut_to_names: HashMap<&str, Vec<&str>> = HashMap::new();
+        // NOTE: This map is not necessary, it just trades off memory for speed
+        // by saving us an extra loop.
+        let mut name_to_target: HashMap<&str, &DesugaredTargetCfg> = HashMap::new();
+        for (shortcut_str, target) in desugared_cfg
             .targets
             .iter()
-            .map(|target| (&target.shortcut_str, &target.name))
+            .map(|target| (&target.shortcut_str, target))
         {
-            if let Some(target_names) = shortcut_str_to_names.get_mut(shortcut_str.as_str()) {
-                target_names.push(target_name);
+            if let Some(target_names) = shortcut_to_names.get_mut(shortcut_str.as_str()) {
+                target_names.push(&target.name);
             } else {
-                shortcut_str_to_names.insert(shortcut_str, vec![target_name]);
+                shortcut_to_names.insert(shortcut_str, vec![&target.name]);
             }
+
+            name_to_target.insert(target.name.as_str(), target);
         }
-        let mut reconciled_map: HashMap<String, String> = HashMap::new();
-        for (shortcut_str, target_names) in &shortcut_str_to_names {
+
+        // Now, we can reconcile:
+        let mut reconciled_targets: Vec<DesugaredTargetCfg> = vec![];
+        for (shortcut_str, target_names) in &shortcut_to_names {
             if target_names.len() > 1 {
                 // Conflict!
                 eprintln!(
@@ -149,14 +170,15 @@ impl Config {
                     shortcut_str, target_names
                 );
                 let reconciliation =
-                    FIRST_NONMATCH(&shortcut_str_to_names, &target_names, &shortcut_str)
-                        .expect("TODO");
+                    FIRST_NONMATCH(&shortcut_to_names, &target_names, &shortcut_str).expect("TODO");
 
                 for (i, char) in reconciliation.iter().enumerate() {
-                    reconciled_map.insert(
-                        target_names.get(i).expect("reconciliation returned more results than there were targets to reconcile").to_string(),
-                        format!("{}-{}", shortcut_str, char),
-                    );
+                    let mut target = name_to_target
+                        .get_mut(target_names.get(i).unwrap())
+                        .unwrap()
+                        .clone();
+                    target.shortcut_str = format!("{}-{}", shortcut_str, char);
+                    reconciled_targets.push(target);
                     eprintln!(
                         "Reconciliation: '{}' -> {}",
                         format!("{}-{}", shortcut_str, char),
@@ -165,33 +187,14 @@ impl Config {
                 }
             } else {
                 // No conflict. Transfer & move on.
-                // TODO: Clone.
-                reconciled_map.insert(target_names[0].to_string(), shortcut_str.to_string());
+                let target = name_to_target
+                    .get_mut(target_names.get(0).unwrap())
+                    .unwrap();
+                reconciled_targets.push(target.clone());
                 continue;
             }
         }
 
-        let reconciled_targets = desugared_cfg
-            .targets
-            .iter()
-            .map(|target| {
-                let reconciled_shortcut_str = reconciled_map
-                    .get(&target.name)
-                    .expect("TODO: This should never happen");
-                eprintln!(
-                    "Mapping shortcut '{}' to target '{}'",
-                    reconciled_shortcut_str, target.name
-                );
-                DesugaredTargetCfg {
-                    name: target.name.clone(),
-                    shortcut_str: reconciled_shortcut_str.to_string(),
-                    help: target.help.clone(),
-                    cmd: target.cmd.clone(),
-                    deps: target.deps.clone(),
-                    execute_kind: target.execute_kind,
-                }
-            })
-            .collect();
         DesugaredConfig {
             options: desugared_cfg.options,
             targets: reconciled_targets,
@@ -204,8 +207,6 @@ impl Config {
         } else {
             sugar.name
         };
-        // TODO: Can we just inline this function call? That way we will only
-        // execute it when we need to.
         let shortcut_str = Self::name_to_short(&realized_name);
         let desugared = DesugaredTargetCfg {
             name: realized_name.clone(),
