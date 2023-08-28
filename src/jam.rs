@@ -38,6 +38,8 @@ pub type NodeIdx = NodeIndex<IdxT>;
 // actually making good use of the strengths of a trie, I think. In either case,
 // it shouldn't really change much in the code, even in terms of complexity, so
 // I'm just going to keep it here until I find a good enough reason to refactor.
+// TODO: With reconciliation changes, we should not need a Vector of node
+// indexes anymore, I think.
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
@@ -257,7 +259,7 @@ impl<'a> Jam<'a> {
             }
             Err(ExecError::Ambiguous {
                 shortcut: _,
-                conflict_msg: _,
+                conflicts: _,
             }) => Lookup::Conflict,
             Err(_) => Lookup::NotFound,
         }
@@ -298,11 +300,10 @@ impl<'a> Jam<'a> {
         if target_idxes.len() > 1 {
             return Err(ExecError::Ambiguous {
                 shortcut,
-                conflict_msg: target_idxes
+                conflicts: target_idxes
                     .iter()
-                    .map(|idx| format!("'{}'", self.dag[*idx].name))
-                    .collect::<Vec<String>>()
-                    .join(" or "),
+                    .map(|idx| self.dag[*idx].name.to_string())
+                    .collect::<Vec<String>>(),
             });
         }
         if let Some(nidx) = target_idxes.first() {
@@ -369,15 +370,14 @@ impl<'a> Jam<'a> {
                     eprintln!("Child count: {}", node.children().iter().count());
                     // If the shortcut is found as a subtrie trie, then it is an
                     // ambiguity.
+                    let mut conflicts: Vec<String> = node
+                        .values()
+                        .map(|val| self.dag[val[0]].name.to_string())
+                        .collect();
+                    conflicts.sort();
                     return Err(ExecError::Ambiguous {
                         shortcut: shortcut.clone(),
-                        conflict_msg: node
-                            .children()
-                            .iter()
-                            .filter(|node| node.value().is_some())
-                            .map(|node| format!("'{}'", self.dag[node.value().unwrap()[0]].name))
-                            .intersperse(String::from(" or "))
-                            .collect(),
+                        conflicts,
                     });
                 }
                 return Err(ExecError::NotFound {
@@ -944,7 +944,7 @@ mod tests {
                 let jam = get_jam(&cfg);
                 check_err(
                     jam.execute(Shortcut::from_shortcut_str("b")),
-                    "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh'?)",
+                    "given shortcut 'b' is ambiguous (one of: [\"breh\", \"bruh\"]?)",
                 );
                 assert!(!check_file(bruh_file));
                 assert!(!check_file(breh_file));
@@ -966,7 +966,7 @@ mod tests {
                 let jam = get_jam(&cfg);
                 check_err(
                     jam.execute(Shortcut::from_shortcut_str("b")),
-                    "given shortcut 'b' is ambiguous (i.e. is it 'broh' or 'breh' or 'broh'?)",
+                    "given shortcut 'b' is ambiguous (one of: [\"breh\", \"broh\", \"bruh\"]?)",
                 );
                 assert!(!check_file(bruh_file));
                 assert!(!check_file(breh_file));

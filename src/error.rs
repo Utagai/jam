@@ -4,13 +4,12 @@ use crate::jam::Shortcut;
 
 pub type ExecResult<T> = Result<T, ExecError>;
 
-// TODO: Should Ambiguous case take a list of strings and it intersperses itself?
 #[derive(Error, Debug, PartialEq)]
 pub enum ExecError {
-    #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
+    #[error("given shortcut '{shortcut}' is ambiguous (one of: {conflicts:?}?)")]
     Ambiguous {
         shortcut: Shortcut,
-        conflict_msg: String,
+        conflicts: Vec<String>,
     },
     #[error("no command for given shortcut '{shortcut}'")]
     NotFound { shortcut: Shortcut },
