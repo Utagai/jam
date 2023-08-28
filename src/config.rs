@@ -129,16 +129,16 @@ impl Config {
         // string may be >1. Successful reconciliation will bring that down to
         // always =1.
         let mut shortcut_str_to_names: HashMap<String, Vec<&str>> = HashMap::new();
-        for shortcut_name_tuple in desugared_cfg
+        for (shortcut_str, target_name) in desugared_cfg
             .targets
             .iter()
             .map(|target| (target.shortcut_str.clone(), &target.name))
         // TODO: Clone.
         {
-            if let Some(target_names) = shortcut_str_to_names.get_mut(&shortcut_name_tuple.0) {
-                target_names.push(shortcut_name_tuple.1);
+            if let Some(target_names) = shortcut_str_to_names.get_mut(&shortcut_str) {
+                target_names.push(target_name);
             } else {
-                shortcut_str_to_names.insert(shortcut_name_tuple.0, vec![shortcut_name_tuple.1]);
+                shortcut_str_to_names.insert(shortcut_str, vec![target_name]);
             }
         }
         let mut reconciled_map: HashMap<String, String> = HashMap::new();
