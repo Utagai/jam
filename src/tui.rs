@@ -48,6 +48,8 @@ impl<'a> App<'a> {
 
     fn reverse(&mut self) {
         self.prefix.pop();
+        // TODO: Can we just always call reconcile() here or does that have some
+        // bad consequences e.g. unintuitive suggestions in the TUI?
         self.next = self.jam.next_keys(&self.prefix)
     }
 
@@ -60,7 +62,7 @@ impl<'a> App<'a> {
     }
 
     fn predict_key(&self, key: char) -> Result<Vec<&str>> {
-        Ok(self.jam.get_children_names(&self.prefix.append(&key))?)
+        Ok(self.jam.next_target_names(&self.prefix.append(&key))?)
     }
 }
 

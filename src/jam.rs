@@ -39,6 +39,8 @@ pub type NodeIdx = NodeIndex<IdxT>;
 // actually making good use of the strengths of a trie, I think. In either case,
 // it shouldn't really change much in the code, even in terms of complexity, so
 // I'm just going to keep it here until I find a good enough reason to refactor.
+// NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
+// can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
@@ -260,7 +262,7 @@ impl<'a> Jam<'a> {
     /// Takes a shortcut and determines what all the possible subsequent
     /// characters could be. Note that reconciliation is _not_ done here, and
     /// this function can return a next-character that leads to an ambiguous
-    /// shortcut. Callers must handle this themselves. See tui.rs.
+    /// shortcut. Callers must handle this themselves.
     pub fn next_keys(&self, prefix: &Shortcut) -> Vec<char> {
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
@@ -293,7 +295,7 @@ impl<'a> Jam<'a> {
     /// the case where the shortcut leads to an ambiguity that must be
     /// reconciled.
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
-        match self.get_idxes(shortcut) {
+        match self.resolve(shortcut) {
             Ok(idxes) => {
                 if idxes.is_empty() {
                     Lookup::NotFound
@@ -305,6 +307,7 @@ impl<'a> Jam<'a> {
                 }
             }
             Err(ExecError::Ambiguous {
+                // TODO: Seems like ExecError::Ambiguous is never returned from resolve(), so why are we handling it here?
                 shortcut: _,
                 conflict_msg: _,
             }) => Lookup::Conflict,
@@ -319,12 +322,15 @@ impl<'a> Jam<'a> {
     /// lead to if it were to be extended by a single character. This is similar
     /// to next_keys(), but returns the names of the targets it leads to rather
     /// than what the next characters to get to those targets are.
-    /// NOTE: This method is different from get_idxes() as well.  get_idxes
+    /// NOTE: This method is different from resolve() as well.  resolve
     /// tries to find the nodes that a given shortcut maps to.  We don't
     /// actually want that here. We want the things that this shortcut can
     /// _eventually_ lead to.  AKA, we don't want just the shortcut itself, we
     /// also want its children.
-    pub fn get_children_names(&self, shortcut: &Shortcut) -> ExecResult<Vec<&'a str>> {
+    /// TODO: This method is so bad:
+    /// 1. The name is garbage and doesn't say anything really about what it does.
+    /// 2. It makes use of reconciliation but only sometimes.
+    pub fn next_target_names(&self, shortcut: &Shortcut) -> ExecResult<Vec<&'a str>> {
         Ok(
             if let Some(subtrie) = self.shortcuts.get_node(shortcut.iter()) {
                 subtrie
@@ -334,7 +340,7 @@ impl<'a> Jam<'a> {
                     .collect()
             } else {
                 // If the shortcut isn't found in the trie, it is likely a conflict.
-                self.get_idxes(shortcut)? // Run get_idxes to see if reconciliation gets us anything.
+                self.resolve(shortcut)? // Run resolve to see if reconciliation gets us anything.
                     .iter() // Iterate them.
                     .map(|idx| self.dag[*idx].name) // And map them to their names.
                     .collect()
@@ -351,12 +357,12 @@ impl<'a> Jam<'a> {
             .ok_or(ExecError::NotFound {
                 shortcut: shortcut.clone(),
             })?;
-        self.reconcile_with_nidxes(shortcut, nidxes)
+        self.reconcile_from_nidxes(shortcut, nidxes)
     }
 
     pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
         info!(self.logger, "executing");
-        let target_idxes = self.get_idxes(&shortcut)?;
+        let target_idxes = self.resolve(&shortcut)?;
         if target_idxes.len() > 1 {
             return Err(ExecError::Ambiguous {
                 shortcut,
@@ -368,7 +374,7 @@ impl<'a> Jam<'a> {
             });
         }
         if let Some(nidx) = target_idxes.first() {
-            self.execute_target(&self.logger, *nidx, 0)
+            self.execute_from_nidx(&self.logger, *nidx, 0)
         } else {
             Err(ExecError::NotFound { shortcut })
         }
@@ -377,7 +383,12 @@ impl<'a> Jam<'a> {
     // NOTE: We take a logger explicitly here instead of relying on self.logger
     // because this function can execute recursively, and we want to encode that
     // recursion into the logger's context as it goes on.
-    fn execute_target(&self, logger: &slog::Logger, nidx: NodeIdx, depth: usize) -> ExecResult<()> {
+    fn execute_from_nidx(
+        &self,
+        logger: &slog::Logger,
+        nidx: NodeIdx,
+        depth: usize,
+    ) -> ExecResult<()> {
         let target = &self.dag[nidx];
         info!(
             logger,
@@ -388,7 +399,7 @@ impl<'a> Jam<'a> {
         let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
             let dep_logger = logger.new(o!("parent" => target.name.to_string()));
-            self.execute_target(&dep_logger, dep.1, depth + 1)
+            self.execute_from_nidx(&dep_logger, dep.1, depth + 1)
                 .map_err(|err| ExecError::Dependency {
                     dep_name: target.name.to_string(),
                     err: Box::new(err),
@@ -421,7 +432,7 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
-    fn get_idxes(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
+    fn resolve(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
         match shortcuts_ref.get(shortcut.iter()) {
@@ -451,7 +462,7 @@ impl<'a> Jam<'a> {
                         // If it does indeed have a conflict,
                         // then let's make sure that the specified
                         // reconciliation key is a valid one:
-                        let reconciliation_keys = self.reconcile_with_nidxes(&tail, nidxes)?;
+                        let reconciliation_keys = self.reconcile_from_nidxes(&tail, nidxes)?;
 
                         // The returned reconciliation keys are 1:1
                         // with the node indexes. i.e., the
@@ -489,7 +500,7 @@ impl<'a> Jam<'a> {
         Ok(target_idxes)
     }
 
-    fn reconcile_with_nidxes(
+    fn reconcile_from_nidxes(
         &self,
         shortcut: &Shortcut,
         nidxes: &[NodeIdx],
