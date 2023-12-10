@@ -129,7 +129,7 @@ impl Clone for Shortcut {
 #[derive(Error, Debug, PartialEq)]
 pub enum ExecError {
     #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
-    Ambiguous {
+    Conflict {
         shortcut: Shortcut,
         conflict_msg: String,
     },

@@ -14,14 +14,14 @@ use tui::{
     Terminal, TerminalOptions,
 };
 
-use super::ui::ui;
+use super::ui::{ui, State};
 use crate::jam::{Jam, Lookup, Shortcut};
 
-pub(super) struct App<'a> {
+struct App<'a> {
     jam: &'a Jam<'a>,
-    pub(super) prefix: Shortcut,
-    pub(super) next: Vec<char>,
-    pub(super) errmsg: String,
+    prefix: Shortcut,
+    next: Vec<char>,
+    errmsg: String,
     logger: Logger,
 }
 
@@ -58,7 +58,7 @@ impl<'a> App<'a> {
             .expect("failed to reconcile");
     }
 
-    pub(super) fn next_target_names(&self, key: char) -> Result<Vec<&str>> {
+    fn next_target_names(&self, key: char) -> Result<Vec<&str>> {
         Ok(self.jam.next_target_names(&self.prefix.append(&key))?)
     }
 }
@@ -81,10 +81,19 @@ fn run_app<B: Backend>(
 ) -> Result<Shortcut> {
     let mut last_tick = Instant::now();
     loop {
+        let state = State {
+            key_target_pairs: app
+                .next
+                .iter()
+                .filter_map(|k| app.next_target_names(*k).ok().map(|targets| (k, targets)))
+                .collect(),
+            errmsg: &app.errmsg,
+            prefix: &app.prefix,
+        };
         // Does the actual drawing of the UI!
         // Note that we make a _call_ to ui() here, we are re-creating
         // the UI each and every time.
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, state))?;
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));

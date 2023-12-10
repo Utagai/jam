@@ -9,9 +9,18 @@ use tui::{
     Frame,
 };
 
-use super::core::App;
+use crate::jam::Shortcut;
 
-pub fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub(super) struct State<'a> {
+    // key_target_pairs is a list of (key, targets) pairs.
+    // They are eventually rendered as e.g.:
+    //  a -> 'build'
+    pub(super) key_target_pairs: Vec<(&'a char, Vec<&'a str>)>,
+    pub(super) errmsg: &'a str,
+    pub(super) prefix: &'a Shortcut,
+}
+
+pub fn ui<B: Backend>(f: &mut Frame<B>, state: State) {
     let term_region = f.size();
 
     let main_regions = Layout::default()
@@ -35,13 +44,17 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // a title.
     // The paragraph just has default style and left-alignment and trimed wrapping.
     // This call below draws it onto the term.
-    draw_keys(f, app, main_regions[0]);
-    draw_error(f, app, main_regions[1]);
-    draw_statusbar(f, app, main_regions[2])
+    draw_keys(f, main_regions[0], state.key_target_pairs);
+    draw_error(f, main_regions[1], &state.errmsg);
+    draw_statusbar(f, main_regions[2], &state.prefix)
 }
 
-fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
-    let keys_para = Paragraph::new(key_text(app))
+fn draw_keys<B: Backend>(
+    f: &mut Frame<B>,
+    region: Rect,
+    key_target_pairs: Vec<(&char, Vec<&str>)>,
+) {
+    let keys_para = Paragraph::new(key_text(key_target_pairs))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -60,11 +73,9 @@ fn draw_keys<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
 static PREFIX_MARKER: &str = "...";
 static ERROR_MARKER: &str = "???";
 
-fn key_text<'a>(app: &'a App) -> Vec<Line<'a>> {
-    let target_strings_to_render: Vec<(&char, &str, &str)> = app
-        .next
+fn key_text<'a>(key_to_name: Vec<(&'a char, Vec<&'a str>)>) -> Vec<Line<'a>> {
+    let lines_to_render: Vec<(&&char, &str, &str)> = key_to_name
         .iter()
-        .filter_map(|k| app.next_target_names(*k).ok().map(|targets| (k, targets)))
         .map(|(k, targets)| {
             if targets.len() > 1 {
                 (k, PREFIX_MARKER, " ⤙ ")
@@ -77,7 +88,7 @@ fn key_text<'a>(app: &'a App) -> Vec<Line<'a>> {
         .collect();
 
     let max_target_string_len = std::cmp::max(
-        target_strings_to_render
+        lines_to_render
             .iter()
             .map(|(_, ts, _)| ts.len())
             .max()
@@ -86,7 +97,7 @@ fn key_text<'a>(app: &'a App) -> Vec<Line<'a>> {
     );
 
     // Text to show in paragraph.
-    let spans_to_render = target_strings_to_render
+    let spans_to_render = lines_to_render
         .iter()
         .map(|(k, target_string, connector)| {
             generate_spans_for_key(k, target_string, connector, max_target_string_len)
@@ -156,8 +167,8 @@ fn generate_spans_for_key<'a>(
     ])
 }
 
-fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
-    let error_para = Paragraph::new(Line::from(app.errmsg.to_string())).block(
+fn draw_error<B: Backend>(f: &mut Frame<B>, region: Rect, errmsg: &str) {
+    let error_para = Paragraph::new(Line::from(errmsg.to_string())).block(
         Block::default()
             .borders(Borders::ALL)
             .title(Span::styled(
@@ -171,7 +182,7 @@ fn draw_error<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     f.render_widget(error_para, region)
 }
 
-fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
+fn draw_statusbar<B: Backend>(f: &mut Frame<B>, region: Rect, prefix: &Shortcut) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
@@ -204,7 +215,7 @@ fn draw_statusbar<B: Backend>(f: &mut Frame<B>, app: &App, region: Rect) {
     let fg_color_style = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::ITALIC);
-    let prefix = Paragraph::new(format!("prefix: '{}'", app.prefix,)).style(fg_color_style);
+    let prefix = Paragraph::new(format!("prefix: '{}'", prefix,)).style(fg_color_style);
     let helptext = Paragraph::new("? - help")
         .alignment(Alignment::Right)
         .style(fg_color_style);
