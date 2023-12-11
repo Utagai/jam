@@ -15,12 +15,12 @@ use tui::{
 };
 
 use super::ui::{ui, State};
-use crate::jam::{Jam, Lookup, Shortcut};
+use crate::jam::{Jam, Lookup, NextKey, Shortcut};
 
 struct App<'a> {
     jam: &'a Jam<'a>,
     prefix: Shortcut,
-    next: Vec<(char, Vec<&'a str>)>,
+    next: Vec<NextKey<'a>>,
     errmsg: String,
     logger: Logger,
 }
@@ -65,7 +65,7 @@ impl<'a> App<'a> {
     }
 
     fn is_valid_key(&self, key: &char) -> bool {
-        self.next.iter().any(|(k, _)| k == key)
+        self.next.iter().any(|nk| nk.key() == *key)
     }
 }
 

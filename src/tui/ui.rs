@@ -9,13 +9,13 @@ use tui::{
     Frame,
 };
 
-use crate::jam::Shortcut;
+use crate::jam::{NextKey, Shortcut};
 
 pub(super) struct State<'a> {
     // key_target_pairs is a list of (key, targets) pairs.
     // They are eventually rendered as e.g.:
     //  a -> 'build'
-    pub(super) key_target_pairs: &'a Vec<(char, Vec<&'a str>)>,
+    pub(super) key_target_pairs: &'a Vec<NextKey<'a>>,
     pub(super) errmsg: &'a str,
     pub(super) prefix: &'a Shortcut,
 }
@@ -49,11 +49,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: State) {
     draw_statusbar(f, main_regions[2], &state.prefix)
 }
 
-fn draw_keys<B: Backend>(
-    f: &mut Frame<B>,
-    region: Rect,
-    key_target_pairs: &Vec<(char, Vec<&str>)>,
-) {
+fn draw_keys<B: Backend>(f: &mut Frame<B>, region: Rect, key_target_pairs: &Vec<NextKey>) {
     let keys_para = Paragraph::new(key_text(key_target_pairs))
         .block(
             Block::default()
@@ -71,19 +67,13 @@ fn draw_keys<B: Backend>(
 }
 
 static PREFIX_MARKER: &str = "...";
-static ERROR_MARKER: &str = "???";
 
-fn key_text<'a>(key_to_name: &'a Vec<(char, Vec<&'a str>)>) -> Vec<Line<'a>> {
+fn key_text<'a>(key_to_name: &'a Vec<NextKey>) -> Vec<Line<'a>> {
     let lines_to_render: Vec<(&char, &str, &str)> = key_to_name
         .iter()
-        .map(|(k, targets)| {
-            if targets.len() > 1 {
-                (k, PREFIX_MARKER, " ⤙ ")
-            } else if let Some(target_name) = targets.first() {
-                (k, *target_name, " ⇀ ")
-            } else {
-                (k, ERROR_MARKER, " ⇀ ")
-            }
+        .map(|nk| match nk {
+            NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
+            NextKey::BranchKey { key } => (key, PREFIX_MARKER, " ⤙ "),
         })
         .collect();
 
@@ -93,7 +83,7 @@ fn key_text<'a>(key_to_name: &'a Vec<(char, Vec<&'a str>)>) -> Vec<Line<'a>> {
             .map(|(_, ts, _)| ts.len())
             .max()
             .unwrap_or(0),
-        std::cmp::max(PREFIX_MARKER.len(), ERROR_MARKER.len()),
+        PREFIX_MARKER.len(),
     );
 
     // Text to show in paragraph.
@@ -135,7 +125,7 @@ fn generate_spans_for_key<'a>(
         Span::styled(connector.to_string(), Style::default().fg(Color::DarkGray)),
         // --------------------------
         // The target name or marker.
-        if target_string == PREFIX_MARKER || target_string == ERROR_MARKER {
+        if target_string == PREFIX_MARKER {
             Span::styled(
                 // NOTE: The reason we have a space after the
                 // PREFIX_MARKER in the following string is

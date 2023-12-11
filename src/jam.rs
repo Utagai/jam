@@ -165,6 +165,31 @@ pub enum Lookup {
     Conflict,
 }
 
+pub enum NextKey<'a> {
+    LeafKey { key: char, target_name: &'a str },
+    BranchKey { key: char },
+}
+
+impl<'a> NextKey<'a> {
+    fn new(key: char, target_names: Vec<&'a str>) -> NextKey<'a> {
+        if target_names.len() == 1 {
+            NextKey::LeafKey {
+                key,
+                target_name: target_names[0],
+            }
+        } else {
+            NextKey::BranchKey { key }
+        }
+    }
+
+    pub fn key(&self) -> char {
+        match self {
+            NextKey::LeafKey { key, .. } => *key,
+            NextKey::BranchKey { key } => *key,
+        }
+    }
+}
+
 impl<'a> Jam<'a> {
     pub fn new(
         logger: &slog::Logger,
@@ -266,7 +291,7 @@ impl<'a> Jam<'a> {
         &self,
         prefix: &Shortcut,
         conflict: bool, // NOTE: Given just a prefix, there isn't any way to know for sure if we are facing a conflict. Therefore, this information must be passed in from the context of the callsite.
-    ) -> ExecResult<Vec<(char, Vec<&str>)>> {
+    ) -> ExecResult<Vec<NextKey>> {
         if conflict {
             return self.next_conflict(prefix);
         } else {
@@ -274,13 +299,32 @@ impl<'a> Jam<'a> {
         }
     }
 
-    fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<(char, Vec<&str>)>> {
+    fn next_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
+        let nidxes = self
+            .shortcuts
+            .get(prefix.iter())
+            .ok_or(ExecError::NotFound {
+                shortcut: prefix.clone(),
+            })?;
+        self.reconcile(prefix, nidxes).and_then(|keys| {
+            keys.into_iter()
+                .map(|key| {
+                    self.resolve_shortcut(&prefix.append(&key)).map(|nidxes| {
+                        NextKey::new(key, nidxes.iter().map(|idx| self.dag[*idx].name).collect())
+                    })
+                })
+                .collect::<ExecResult<Vec<NextKey>>>()
+        })
+    }
+
+    fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
         // If we're not in conflict, then we can just look up the prefix in the trie directly:
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
-            let mut keys_to_names: Vec<(char, Vec<&str>)> = subtrie
+            let mut keys_to_names: Vec<NextKey> = subtrie
                 .keys()
                 .filter_map(|suffix| {
+                    // .get(0) since we are only interested in the next key.
                     suffix.get(0).map(|key| {
                         // For this key, get the target names that that it leads to.
                         let names = self
@@ -291,7 +335,7 @@ impl<'a> Jam<'a> {
                             .flatten()
                             .map(|v| self.dag[*v].name)
                             .collect();
-                        (**key, names)
+                        NextKey::new(**key, names)
                     })
                 })
                 .collect();
@@ -303,8 +347,8 @@ impl<'a> Jam<'a> {
             //   ab
             // The first call with the prefix being the empty shortcut will
             // return [a,a] unless we de-dupe things.
-            keys_to_names.sort_by(|a, b| a.0.cmp(&b.0));
-            keys_to_names.dedup_by(|a, b| a.0 == b.0);
+            keys_to_names.sort_by(|a, b| a.key().cmp(&b.key()));
+            keys_to_names.dedup_by(|a, b| a.key() == b.key());
 
             // Now return the keys, mapped to their next target names.
             Ok(keys_to_names)
@@ -314,23 +358,6 @@ impl<'a> Jam<'a> {
             // with.
             Ok(vec![])
         }
-    }
-
-    fn next_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<(char, Vec<&str>)>> {
-        let nidxes = self
-            .shortcuts
-            .get(prefix.iter())
-            .ok_or(ExecError::NotFound {
-                shortcut: prefix.clone(),
-            })?;
-        self.reconcile(prefix, nidxes).and_then(|keys| {
-            keys.into_iter()
-                .map(|key| {
-                    self.resolve_shortcut(&prefix.append(&key))
-                        .map(|nidxes| (key, nidxes.iter().map(|idx| self.dag[*idx].name).collect()))
-                })
-                .collect::<ExecResult<Vec<(char, Vec<&str>)>>>()
-        })
     }
 
     /// Takes a shortcut and returns an existence result.
