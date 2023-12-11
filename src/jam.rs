@@ -414,7 +414,6 @@ impl<'a> Jam<'a> {
             o!("name" => target.name, "depth" => depth)
         );
         let deps = self.dag.children(nidx);
-        let mut num_deps_execed = 0;
         for dep in deps.iter(&self.dag) {
             let dep_logger = logger.new(o!("parent" => target.name.to_string()));
             self.execute_nidx(&dep_logger, dep.1, depth + 1)
@@ -422,7 +421,6 @@ impl<'a> Jam<'a> {
                     dep_name: target.name.to_string(),
                     err: Box::new(err),
                 })?;
-            num_deps_execed += 1;
         }
         if let Some(cmd) = target.cmd {
             info!(logger, "running executor"; o!("cmd" => cmd));
@@ -442,10 +440,6 @@ impl<'a> Jam<'a> {
                     });
                 }
             }
-        } else if num_deps_execed <= 0 {
-            return Err(ExecError::CannotExec {
-                name: target.name.to_string(),
-            });
         }
         Ok(())
     }
