@@ -15,7 +15,7 @@ pub(super) struct State<'a> {
     // key_target_pairs is a list of (key, targets) pairs.
     // They are eventually rendered as e.g.:
     //  a -> 'build'
-    pub(super) key_target_pairs: Vec<(&'a char, Vec<&'a str>)>,
+    pub(super) key_target_pairs: &'a Vec<(char, Vec<&'a str>)>,
     pub(super) errmsg: &'a str,
     pub(super) prefix: &'a Shortcut,
 }
@@ -52,7 +52,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: State) {
 fn draw_keys<B: Backend>(
     f: &mut Frame<B>,
     region: Rect,
-    key_target_pairs: Vec<(&char, Vec<&str>)>,
+    key_target_pairs: &Vec<(char, Vec<&str>)>,
 ) {
     let keys_para = Paragraph::new(key_text(key_target_pairs))
         .block(
@@ -73,8 +73,8 @@ fn draw_keys<B: Backend>(
 static PREFIX_MARKER: &str = "...";
 static ERROR_MARKER: &str = "???";
 
-fn key_text<'a>(key_to_name: Vec<(&'a char, Vec<&'a str>)>) -> Vec<Line<'a>> {
-    let lines_to_render: Vec<(&&char, &str, &str)> = key_to_name
+fn key_text<'a>(key_to_name: &'a Vec<(char, Vec<&'a str>)>) -> Vec<Line<'a>> {
+    let lines_to_render: Vec<(&char, &str, &str)> = key_to_name
         .iter()
         .map(|(k, targets)| {
             if targets.len() > 1 {

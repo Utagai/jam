@@ -8,7 +8,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use slog::{info, Logger};
+use slog::{debug, info, Logger};
 use tui::{
     backend::{Backend, CrosstermBackend},
     Terminal, TerminalOptions,
@@ -20,7 +20,7 @@ use crate::jam::{Jam, Lookup, Shortcut};
 struct App<'a> {
     jam: &'a Jam<'a>,
     prefix: Shortcut,
-    next: Vec<char>,
+    next: Vec<(char, Vec<&'a str>)>,
     errmsg: String,
     logger: Logger,
 }
@@ -28,7 +28,9 @@ struct App<'a> {
 impl<'a> App<'a> {
     fn new(logger: Logger, jam: &'a Jam<'a>) -> App<'a> {
         let initial_prefix = Shortcut::empty();
-        let next_keys = jam.next_keys(&initial_prefix);
+        let next_keys = jam
+            .next(&initial_prefix, false)
+            .expect("failed to get next keys on initialization");
         App {
             jam,
             prefix: initial_prefix,
@@ -40,26 +42,30 @@ impl<'a> App<'a> {
 
     fn keypress(&mut self, key: char) {
         self.prefix = self.prefix.append(&key);
-        self.next = self.jam.next_keys(&self.prefix);
+        self.next = self
+            .jam
+            .next(&self.prefix, false)
+            .expect("failed to get next keys on keypress");
     }
 
     fn reverse(&mut self) {
         self.prefix.pop();
-        // TODO: Can we just always call reconcile() here or does that have some
-        // bad consequences e.g. unintuitive suggestions in the TUI?
-        self.next = self.jam.next_keys(&self.prefix)
+        self.next = self
+            .jam
+            .next(&self.prefix, false)
+            .expect("failed to get next keys on reverse")
     }
 
     fn reconcile(&mut self) {
         info!(self.logger, "getting rid of unused lint for now");
         self.next = self
             .jam
-            .reconcile(&self.prefix)
-            .expect("failed to reconcile");
+            .next(&self.prefix, true)
+            .expect("failed to get next keys on conflict")
     }
 
-    fn next_target_names(&self, key: char) -> Result<Vec<&str>> {
-        Ok(self.jam.next_target_names(&self.prefix.append(&key))?)
+    fn is_valid_key(&self, key: &char) -> bool {
+        self.next.iter().any(|(k, _)| k == key)
     }
 }
 
@@ -82,11 +88,7 @@ fn run_app<B: Backend>(
     let mut last_tick = Instant::now();
     loop {
         let state = State {
-            key_target_pairs: app
-                .next
-                .iter()
-                .filter_map(|k| app.next_target_names(*k).ok().map(|targets| (k, targets)))
-                .collect(),
+            key_target_pairs: &app.next,
             errmsg: &app.errmsg,
             prefix: &app.prefix,
         };
@@ -155,10 +157,8 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
             Ok(Response::Request)
         }
         KeyCode::Char(key) => {
-            if app.next.contains(&key) {
-                // TODO: .keypress() mutates app state, leading app.next to be
-                // different from what it was in the above if statement clause.
-                // This is a bit confusing.
+            if app.is_valid_key(&key) {
+                // Update app (and its state) with the new keypress:
                 app.keypress(key);
                 let lookup_res = app.jam.lookup(&app.prefix);
                 match lookup_res {
@@ -167,6 +167,7 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                         if nothing_next && lookup_res == Lookup::Found {
                             return Ok(Response::Execute);
                         } else if nothing_next && lookup_res == Lookup::Conflict {
+                            debug!(app.logger, "reconciling from core.rs");
                             app.reconcile();
                         }
 
