@@ -195,7 +195,7 @@ pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     let mut terminal = Terminal::with_options(
         backend,
         TerminalOptions {
-            viewport: ratatui::Viewport::Inline(40),
+            viewport: ratatui::Viewport::Inline(16),
         },
     )?;
 
