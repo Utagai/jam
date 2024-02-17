@@ -179,9 +179,9 @@ fn draw_statusbar(f: &mut Frame, region: Rect, prefix: &Shortcut) {
         .direction(Direction::Horizontal)
         .constraints(
             [
-                Constraint::Percentage(45),
-                Constraint::Length(max_num_ellipses as u16),
-                Constraint::Percentage(45),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
             ]
             .as_ref(),
         )
