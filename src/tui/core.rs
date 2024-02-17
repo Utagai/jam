@@ -8,11 +8,11 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use slog::{debug, info, Logger};
-use tui::{
+use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal, TerminalOptions,
 };
+use slog::{debug, info, Logger};
 
 use super::ui::{ui, State};
 use crate::jam::{Jam, Lookup, NextKey, Shortcut};
@@ -195,7 +195,7 @@ pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     let mut terminal = Terminal::with_options(
         backend,
         TerminalOptions {
-            viewport: tui::Viewport::Inline(40),
+            viewport: ratatui::Viewport::Inline(40),
         },
     )?;
 

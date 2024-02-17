@@ -1,11 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
@@ -20,7 +20,7 @@ pub(super) struct State<'a> {
     pub(super) prefix: &'a Shortcut,
 }
 
-pub fn ui<B: Backend>(f: &mut Frame<B>, state: State) {
+pub fn ui(f: &mut Frame, state: State) {
     let term_region = f.size();
 
     let main_regions = Layout::default()
@@ -49,7 +49,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: State) {
     draw_statusbar(f, main_regions[2], &state.prefix)
 }
 
-fn draw_keys<B: Backend>(f: &mut Frame<B>, region: Rect, key_target_pairs: &Vec<NextKey>) {
+fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>) {
     let keys_para = Paragraph::new(key_text(key_target_pairs))
         .block(
             Block::default()
@@ -60,7 +60,7 @@ fn draw_keys<B: Backend>(f: &mut Frame<B>, region: Rect, key_target_pairs: &Vec<
                         .add_modifier(Modifier::BOLD)
                         .fg(Color::LightGreen),
                 ))
-                .border_type(tui::widgets::BorderType::Rounded),
+                .border_type(BorderType::Rounded),
         )
         .alignment(Alignment::Center);
     f.render_widget(keys_para, region)
@@ -157,7 +157,7 @@ fn generate_spans_for_key<'a>(
     ])
 }
 
-fn draw_error<B: Backend>(f: &mut Frame<B>, region: Rect, errmsg: &str) {
+fn draw_error(f: &mut Frame, region: Rect, errmsg: &str) {
     let error_para = Paragraph::new(Line::from(errmsg.to_string())).block(
         Block::default()
             .borders(Borders::ALL)
@@ -167,12 +167,12 @@ fn draw_error<B: Backend>(f: &mut Frame<B>, region: Rect, errmsg: &str) {
                     .add_modifier(Modifier::BOLD)
                     .fg(Color::LightRed),
             ))
-            .border_type(tui::widgets::BorderType::Rounded),
+            .border_type(BorderType::Rounded),
     );
     f.render_widget(error_para, region)
 }
 
-fn draw_statusbar<B: Backend>(f: &mut Frame<B>, region: Rect, prefix: &Shortcut) {
+fn draw_statusbar(f: &mut Frame, region: Rect, prefix: &Shortcut) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
