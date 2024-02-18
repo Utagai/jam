@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -17,6 +17,7 @@ pub(super) struct State<'a> {
     pub(super) key_target_pairs: &'a Vec<NextKey<'a>>,
     pub(super) errmsg: &'a str,
     pub(super) prefix: &'a Shortcut,
+    pub(super) tick: u64,
 }
 
 pub fn ui(f: &mut Frame, state: State) {
@@ -40,7 +41,7 @@ pub fn ui(f: &mut Frame, state: State) {
     draw_keys(f, main_regions[0], state.key_target_pairs);
     draw_current_prefix(f, main_regions[1], &state.prefix);
     draw_help(f, main_regions[2], &state.errmsg);
-    draw_waiting_anim(f, main_regions[3]);
+    draw_waiting_anim(f, main_regions[3], state.tick);
 }
 
 fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>) {
@@ -131,7 +132,7 @@ fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut) {
     f.render_widget(prefix_para, region)
 }
 
-fn draw_waiting_anim(f: &mut Frame, region: Rect) {
+fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
@@ -151,11 +152,7 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect) {
     // at N, after which we reset ala modulo.
     // NOTE: Since we want 3 max bullets, and we're using %, we need
     // to do % (N+1).
-    let num_ellipses = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time went backwards")
-        .as_secs()
-        % (max_num_ellipses + 1);
+    let num_ellipses = tick % (max_num_ellipses + 1);
     let ellipses = Paragraph::new("•".repeat(num_ellipses as usize)).style(Style::default());
 
     // Draw the three sections of the status bar:

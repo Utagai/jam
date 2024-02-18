@@ -86,11 +86,13 @@ fn run_app<B: Backend>(
     tick_rate: Duration,
 ) -> Result<Shortcut> {
     let mut last_tick = Instant::now();
+    let mut tick = 0;
     loop {
         let state = State {
             key_target_pairs: &app.next,
             errmsg: &app.errmsg,
             prefix: &app.prefix,
+            tick,
         };
         // Does the actual drawing of the UI!
         // Note that we make a _call_ to ui() here, we are re-creating
@@ -120,10 +122,10 @@ fn run_app<B: Backend>(
             }
         }
 
-        // Basically, when a tick has transpired, run on_tick().
-        // I think the if statement is to be safe but idk for sure.
+        // Basically, when a tick's duration has passed, bump the tick count.
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
+            tick += 1;
         }
     }
 }
