@@ -158,3 +158,94 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64) {
     // Draw the three sections of the status bar:
     f.render_widget(ellipses, status_bar_regions[1]);
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{
+        backend::TestBackend,
+        buffer::Buffer,
+        style::{Color, Modifier, Style},
+        Terminal, TerminalOptions,
+    };
+
+    use crate::{
+        jam::NextKey,
+        tui::ui::{ui, State},
+    };
+
+    #[test]
+    fn basic_tui_test() {
+        let backend = TestBackend::new(17, 9);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        let mut expected = Buffer::with_lines(vec![
+            "                 ",
+            " a ⇀ 'build'     ",
+            "                 ",
+            " prefix: 'h-y'   ",
+            " ? - help        ",
+            "                 ",
+            " •               ",
+            "                 ",
+            "                 ",
+        ]);
+
+        // 'a' is bold:
+        expected
+            .get_mut(1, 1)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⇀ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 1).set_fg(Color::DarkGray);
+        }
+
+        // The target name should be in light green.
+        for i in 5..=11 {
+            expected.get_mut(i, 1).set_fg(Color::LightGreen);
+        }
+
+        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        for i in 1..=15 {
+            expected.get_mut(i, 3).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 4).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 5).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        }
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        key_target_pairs: &vec![NextKey::LeafKey {
+                            key: 'a',
+                            target_name: "build",
+                        }],
+                        tick: 1,
+                    },
+                )
+            })
+            .expect("failed to draw");
+        terminal.backend().assert_buffer(&expected);
+    }
+}
