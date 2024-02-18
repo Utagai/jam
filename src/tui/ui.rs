@@ -1,5 +1,3 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -173,9 +171,14 @@ mod tests {
         tui::ui::{ui, State},
     };
 
+    // The tests here have to have proper styling information, which sucks cause TestBackend/Buffer
+    // doesn't have any ergonomic APIs for specifying styling. There's probably some ways to make
+    // this easier but they're kind of hairy (e.g. designing a DSL for specifying styling, or using
+    // a macro to generate the expected buffer). For now, I'm just going to manually specify the
+    // styling information.
     #[test]
-    fn basic_tui_test() {
-        let backend = TestBackend::new(17, 9);
+    fn single_target() {
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -183,6 +186,23 @@ mod tests {
             },
         )
         .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        key_target_pairs: &vec![NextKey::LeafKey {
+                            key: 'a',
+                            target_name: "build",
+                        }],
+                        tick: 1,
+                    },
+                )
+            })
+            .expect("failed to draw");
 
         let mut expected = Buffer::with_lines(vec![
             "                 ",
@@ -192,7 +212,6 @@ mod tests {
             " ? - help        ",
             "                 ",
             " •               ",
-            "                 ",
             "                 ",
         ]);
 
@@ -230,6 +249,20 @@ mod tests {
             );
         }
 
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn multiple_targets() {
+        let backend = TestBackend::new(17, 9);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
         terminal
             .draw(|f| {
                 ui(
@@ -237,15 +270,390 @@ mod tests {
                     State {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y']),
-                        key_target_pairs: &vec![NextKey::LeafKey {
-                            key: 'a',
-                            target_name: "build",
-                        }],
+                        key_target_pairs: &vec![
+                            NextKey::LeafKey {
+                                key: 'a',
+                                target_name: "build",
+                            },
+                            NextKey::LeafKey {
+                                key: 'b',
+                                target_name: "run",
+                            },
+                        ],
                         tick: 1,
                     },
                 )
             })
             .expect("failed to draw");
+
+        let mut expected = Buffer::with_lines(vec![
+            "                 ",
+            " a ⇀ 'build'     ",
+            " b ⇀ 'run'       ",
+            "                 ",
+            " prefix: 'h-y'   ",
+            " ? - help        ",
+            "                 ",
+            " •               ",
+            "                 ",
+        ]);
+
+        // 'a' is bold:
+        expected
+            .get_mut(1, 1)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⇀ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 1).set_fg(Color::DarkGray);
+        }
+
+        // The target name should be in light green.
+        for i in 5..=11 {
+            expected.get_mut(i, 1).set_fg(Color::LightGreen);
+        }
+
+        // 'b' is bold:
+        expected
+            .get_mut(1, 2)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⇀ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 2).set_fg(Color::DarkGray);
+        }
+
+        // The target name should be in light green.
+        for i in 5..=9 {
+            expected.get_mut(i, 2).set_fg(Color::LightGreen);
+        }
+
+        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        for i in 1..=15 {
+            expected.get_mut(i, 4).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 5).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 6).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        }
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn waiting_animation() {
+        for i in 1..=3 {
+            // The width changes as we add more dots, which corresponds to the loop variable.
+            let width = 16 + i;
+            let backend = TestBackend::new(width, 7);
+            let mut terminal = Terminal::with_options(
+                backend,
+                TerminalOptions {
+                    viewport: ratatui::Viewport::Inline(16),
+                },
+            )
+            .unwrap();
+            terminal
+                .draw(|f| {
+                    ui(
+                        f,
+                        State {
+                            errmsg: "",
+                            prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                            key_target_pairs: &vec![],
+                            tick: i as u64,
+                        },
+                    )
+                })
+                .expect("failed to draw");
+
+            let animation_line = format!(" {}               ", "•".repeat(i as usize));
+            let mut expected = Buffer::with_lines(vec![
+                "                 ",
+                "                 ",
+                " prefix: 'h-y'   ",
+                " ? - help        ",
+                "                 ",
+                &animation_line,
+                "                 ",
+            ]);
+
+            // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+            for i in 1..width - 1 {
+                println!("i: {}", i);
+                expected.get_mut(i, 2).set_style(
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                );
+                expected.get_mut(i, 3).set_style(
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                );
+                expected.get_mut(i, 4).set_style(
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                );
+            }
+
+            terminal.backend().assert_buffer(&expected);
+        }
+    }
+
+    #[test]
+    fn empty_prefix() {
+        // The width changes as we add more dots, which corresponds to the loop variable.
+        let backend = TestBackend::new(17, 7);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec![]),
+                        key_target_pairs: &vec![],
+                        tick: 1,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let mut expected = Buffer::with_lines(vec![
+            "                 ",
+            "                 ",
+            " prefix: ''      ",
+            " ? - help        ",
+            "                 ",
+            " •               ",
+            "                 ",
+        ]);
+
+        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        for i in 1..=15 {
+            println!("i: {}", i);
+            expected.get_mut(i, 2).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 3).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 4).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        }
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn branching_targets() {
+        let backend = TestBackend::new(17, 9);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        key_target_pairs: &vec![
+                            NextKey::BranchKey { key: 'a' },
+                            NextKey::BranchKey { key: 'b' },
+                        ],
+                        tick: 1,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let mut expected = Buffer::with_lines(vec![
+            "                 ",
+            " a ⤙ ...         ",
+            " b ⤙ ...         ",
+            "                 ",
+            " prefix: 'h-y'   ",
+            " ? - help        ",
+            "                 ",
+            " •               ",
+            "                 ",
+        ]);
+
+        // 'a' is bold:
+        expected
+            .get_mut(1, 1)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⤙ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 1).set_fg(Color::DarkGray);
+        }
+
+        // The ellipses should be in dark gray.
+        for i in 5..8 {
+            expected.get_mut(i, 1).set_fg(Color::DarkGray);
+        }
+
+        // 'b' is bold:
+        expected
+            .get_mut(1, 2)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⤙ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 2).set_fg(Color::DarkGray);
+        }
+
+        // The ellipses should be in dark gray.
+        for i in 5..8 {
+            expected.get_mut(i, 2).set_fg(Color::DarkGray);
+        }
+
+        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        for i in 1..=15 {
+            expected.get_mut(i, 4).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 5).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 6).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        }
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn leaf_and_branching_targets() {
+        let backend = TestBackend::new(17, 9);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        key_target_pairs: &vec![
+                            NextKey::LeafKey {
+                                key: 'a',
+                                target_name: "build",
+                            },
+                            NextKey::BranchKey { key: 'b' },
+                        ],
+                        tick: 1,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let mut expected = Buffer::with_lines(vec![
+            "                 ",
+            " a ⇀ 'build'     ",
+            " b ⤙ ...         ",
+            "                 ",
+            " prefix: 'h-y'   ",
+            " ? - help        ",
+            "                 ",
+            " •               ",
+            "                 ",
+        ]);
+
+        // 'a' is bold:
+        expected
+            .get_mut(1, 1)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⤙ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 1).set_fg(Color::DarkGray);
+        }
+
+        // The ellipses should be in dark gray.
+        for i in 5..=11 {
+            expected.get_mut(i, 1).set_fg(Color::LightGreen);
+        }
+
+        // 'b' is bold:
+        expected
+            .get_mut(1, 2)
+            .set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        // ' ⤙ ' is dark gray:
+        for i in 2..=4 {
+            expected.get_mut(i, 2).set_fg(Color::DarkGray);
+        }
+
+        // The ellipses should be in dark gray.
+        for i in 5..8 {
+            expected.get_mut(i, 2).set_fg(Color::DarkGray);
+        }
+
+        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        for i in 1..=15 {
+            expected.get_mut(i, 4).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 5).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+            expected.get_mut(i, 6).set_style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        }
+
         terminal.backend().assert_buffer(&expected);
     }
 }
