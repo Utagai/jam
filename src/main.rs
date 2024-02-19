@@ -33,7 +33,10 @@ struct Cli {
     #[clap(short, long, value_enum)]
     log_level: Option<log::Level>,
 
-    /// Individual keys that together give a shortcut, uniquely identifying a jam command to execute.
+    /// First execution argument. If using a shortcut, this is just the first character. Otherwise, it's the name of the target to execute.
+    exec_arg: Option<String>,
+
+    /// Individual keys that together (with EXEC_ARG) give a shortcut, uniquely identifying a jam command to execute.
     shortcut: Vec<char>,
 }
 
@@ -77,14 +80,21 @@ fn main() -> anyhow::Result<()> {
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");
 
-    let shortcut = if !cli.shortcut.is_empty() {
-        Shortcut(cli.shortcut)
+    if let Some(ref target_name) = cli.exec_arg {
+        if target_name.len() > 1 {
+            jam.execute_by_target_name(&target_name)?;
+            return Ok(());
+        }
+    }
+
+    let shortcut = if let Some(ref target_name) = cli.exec_arg {
+        Shortcut(cli.shortcut).prepend(&target_name.chars().next().unwrap())
     } else {
         tui::core::render(logger, &jam)?
     };
 
     if shortcut.len() > 0 {
-        jam.execute(shortcut)?;
+        jam.execute_by_shortcut(shortcut)?;
     }
 
     Ok(())

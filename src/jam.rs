@@ -39,6 +39,8 @@ pub type NodeIdx = NodeIndex<IdxT>;
 // actually making good use of the strengths of a trie, I think. In either case,
 // it shouldn't really change much in the code, even in terms of complexity, so
 // I'm just going to keep it here until I find a good enough reason to refactor.
+// I mean really, for the sort of scales that this binary is executing at, we
+// can probably just dump everything into a vector and be more than fast enough.
 // NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
 // can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
@@ -76,6 +78,14 @@ impl Shortcut {
     pub fn append(&self, key: &char) -> Shortcut {
         let mut new_vec = self.0.clone();
         new_vec.push(*key);
+        Shortcut(new_vec)
+    }
+
+    // NOTE: The same thing as described for append() above is worth considering
+    // here as well.
+    pub fn prepend(&self, key: &char) -> Shortcut {
+        let mut new_vec = vec![*key];
+        new_vec.extend_from_slice(&self.0);
         Shortcut(new_vec)
     }
 
@@ -133,8 +143,11 @@ pub enum ExecError {
         shortcut: Shortcut,
         conflict_msg: String,
     },
+    // TODO: Probably rename this to ShortcutNotFound for consistency.
     #[error("no command for given shortcut '{shortcut}'")]
-    NotFound { shortcut: Shortcut },
+    ShortcutNotFound { shortcut: Shortcut },
+    #[error("no command for given target name '{target_name}'")]
+    TargetNotFound { target_name: String },
     #[error("target '{name}' has no executable function")]
     CannotExec { name: String },
     #[error("{description}")]
@@ -303,7 +316,7 @@ impl<'a> Jam<'a> {
         let nidxes = self
             .shortcuts
             .get(prefix.iter())
-            .ok_or(ExecError::NotFound {
+            .ok_or(ExecError::ShortcutNotFound {
                 shortcut: prefix.clone(),
             })?;
         self.reconcile(prefix, nidxes).and_then(|keys| {
@@ -383,8 +396,8 @@ impl<'a> Jam<'a> {
         }
     }
 
-    pub fn execute(&self, shortcut: Shortcut) -> ExecResult<()> {
-        info!(self.logger, "executing");
+    pub fn execute_by_shortcut(&self, shortcut: Shortcut) -> ExecResult<()> {
+        info!(self.logger, "executing by shortcut");
         let target_idxes = self.resolve_shortcut(&shortcut)?;
         if target_idxes.len() > 1 {
             return Err(ExecError::Conflict {
@@ -399,8 +412,21 @@ impl<'a> Jam<'a> {
         if let Some(nidx) = target_idxes.first() {
             self.execute_nidx(&self.logger, *nidx, 0)
         } else {
-            Err(ExecError::NotFound { shortcut })
+            Err(ExecError::ShortcutNotFound { shortcut })
         }
+    }
+
+    pub fn execute_by_target_name(&self, target_name: &str) -> ExecResult<()> {
+        info!(self.logger, "executing by target name");
+        let nidx = self
+            .shortcuts
+            .values()
+            .flatten()
+            .find(|nidx| self.dag[**nidx].name == target_name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target_name.to_string(),
+            })?;
+        self.execute_nidx(&self.logger, *nidx, 0)
     }
 
     // NOTE: We take a logger explicitly here instead of relying on self.logger
@@ -464,7 +490,7 @@ impl<'a> Jam<'a> {
                         // conflicts. If it has none, then the user
                         // should just specify the tail.
                         if nidxes.len() <= 1 {
-                            return Err(ExecError::NotFound {
+                            return Err(ExecError::ShortcutNotFound {
                                 shortcut: Shortcut::from(shortcut),
                             });
                         }
@@ -488,7 +514,7 @@ impl<'a> Jam<'a> {
                             // If it isn't there, then this reconciliation
                             // key is not a good one and we should error.
                             None => {
-                                return Err(ExecError::NotFound {
+                                return Err(ExecError::ShortcutNotFound {
                                     shortcut: Shortcut::from(shortcut),
                                 });
                             }
@@ -502,7 +528,7 @@ impl<'a> Jam<'a> {
                         target_idxes = vec![nidx];
                     }
                     None => {
-                        return Err(ExecError::NotFound {
+                        return Err(ExecError::ShortcutNotFound {
                             shortcut: Shortcut::from(shortcut),
                         });
                     }
@@ -898,7 +924,7 @@ mod tests {
             let out_file = TmpFile::new();
             let cfg = Config::with_targets(vec![target::exec("blah", cmd, &out_file)]);
             let jam = get_jam(&cfg);
-            jam.execute(Shortcut::from_shortcut_str("b"))
+            jam.execute_by_shortcut(Shortcut::from_shortcut_str("b"))
                 .expect("expected execution of the command to pass");
             check_file_contents(out_file, expected_message);
         }
@@ -914,7 +940,7 @@ mod tests {
                 target::exec_deps("foo", foo_cmd, &foo_file, vec!["bar"]),
             ]);
             let jam = get_jam(&cfg);
-            jam.execute(Shortcut::from_shortcut_str("f"))
+            jam.execute_by_shortcut(Shortcut::from_shortcut_str("f"))
                 .expect("expected execution of the command to pass");
             check_file_contents(foo_file, "foo");
             check_file_contents(bar_file, "bar");
@@ -931,7 +957,7 @@ mod tests {
                 target::exec_deps("foo", foo_cmd, &foo_file, vec!["bar"]),
             ]);
             let jam = get_jam(&cfg);
-            jam.execute(Shortcut::from_shortcut_str("b"))
+            jam.execute_by_shortcut(Shortcut::from_shortcut_str("b"))
                 .expect("expected execution of the command to pass");
             // Foo should not have been executed, since we executed 'b', or bar, only.
             assert!(!check_file(foo_file));
@@ -958,7 +984,7 @@ mod tests {
                 execute_kind: Some(ExecuteKind::DryRun),
             }]);
             let jam = get_jam(&cfg);
-            jam.execute(Shortcut::from_shortcut_str("b"))
+            jam.execute_by_shortcut(Shortcut::from_shortcut_str("b"))
                 .expect("expected execution of the command to pass");
             // Since we are executing via dry run, no command and
             // therefore no file should have been created.
@@ -982,7 +1008,7 @@ mod tests {
             // 'b-u' however distinguishes 'bruh' from 'breh'. We
             // should therefore see bruh_file with the expected
             // contents, but not breh_file.
-            jam.execute(Shortcut::from_shortcut_str("b-u"))
+            jam.execute_by_shortcut(Shortcut::from_shortcut_str("b-u"))
                 .expect("expected execution of the command to pass");
             check_file_contents(bruh_file, expected_message);
             assert!(!check_file(breh_file))
@@ -1016,7 +1042,7 @@ mod tests {
                 // should therefore see bruh_file with the expected
                 // contents, but not conflict1_file.
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("c-b")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("c-b")),
                     "given shortcut 'c-b' is ambiguous (i.e. is it 'conflict-bar' or 'conflict-baz'?)",
                 );
                 assert!(!check_file(out_file_bar));
@@ -1030,7 +1056,7 @@ mod tests {
                 let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
                 let jam = get_jam(&cfg);
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("i")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("i")),
                     "command failed to execute",
                 );
                 assert!(!check_file(out_file));
@@ -1043,7 +1069,7 @@ mod tests {
                 let cfg = Config::with_targets(vec![target::exec("idontexist", cmd, &out_file)]);
                 let jam = get_jam(&cfg);
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("z-z-z-z-z")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("z-z-z-z-z")),
                     "no command for given shortcut 'z-z-z-z-z'",
                 );
                 assert!(!check_file(out_file));
@@ -1061,7 +1087,7 @@ mod tests {
                 ]);
                 let jam = get_jam(&cfg);
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("f")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("f")),
                     "failed to execute dependency ('foo'): command failed to execute",
                 );
                 // Neither file should be created. The dependency will
@@ -1083,7 +1109,7 @@ mod tests {
                 cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
                 let jam = get_jam(&cfg);
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("b")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("b")),
                     "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh'?)",
                 );
                 assert!(!check_file(bruh_file));
@@ -1105,7 +1131,7 @@ mod tests {
                 cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
                 let jam = get_jam(&cfg);
                 check_err(
-                    jam.execute(Shortcut::from_shortcut_str("b")),
+                    jam.execute_by_shortcut(Shortcut::from_shortcut_str("b")),
                     "given shortcut 'b' is ambiguous (i.e. is it 'breh' or 'bruh' or 'broh'?)",
                 );
                 assert!(!check_file(bruh_file));
