@@ -1014,6 +1014,18 @@ mod tests {
             assert!(!check_file(breh_file))
         }
 
+        #[test]
+        fn executes_by_target() {
+            let expected_message = "hello world";
+            let cmd = &format!("echo {expected_message}");
+            let out_file = TmpFile::new();
+            let cfg = Config::with_targets(vec![target::exec("blah", cmd, &out_file)]);
+            let jam = get_jam(&cfg);
+            jam.execute_by_target_name("blah")
+                .expect("expected execution of the command to pass");
+            check_file_contents(out_file, expected_message);
+        }
+
         mod errors {
             use super::*;
 
