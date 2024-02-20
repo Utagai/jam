@@ -33,6 +33,9 @@ struct Cli {
     #[clap(short, long, value_enum)]
     log_level: Option<log::Level>,
 
+    #[clap(long, conflicts_with = "exec_arg", default_value_t = false)]
+    dump_mappings: bool,
+
     /// First execution argument. If using a shortcut, this is just the first character. Otherwise, it's the name of the target to execute.
     exec_arg: Option<String>,
 
@@ -79,6 +82,13 @@ fn main() -> anyhow::Result<()> {
 
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");
+
+    if cli.dump_mappings {
+        jam.mappings()?.iter().for_each(|(shortcut, target_name)| {
+            println!("{} -> {}", shortcut, target_name);
+        });
+        return Ok(());
+    }
 
     if let Some(ref target_name) = cli.exec_arg {
         if target_name.len() > 1 {

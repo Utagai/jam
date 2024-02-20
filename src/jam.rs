@@ -53,7 +53,7 @@ pub struct Jam<'a> {
     logger: slog::Logger,
 }
 
-#[derive(Eq, Debug)]
+#[derive(Eq, Debug, PartialOrd, Ord)]
 pub struct Shortcut(pub Vec<char>);
 
 impl Shortcut {
@@ -112,6 +112,12 @@ impl Shortcut {
 impl From<&Self> for Shortcut {
     fn from(value: &Self) -> Self {
         Shortcut(value.0.clone())
+    }
+}
+
+impl From<Vec<&char>> for Shortcut {
+    fn from(value: Vec<&char>) -> Self {
+        Shortcut(value.iter().map(|c| **c).collect())
     }
 }
 
@@ -297,6 +303,37 @@ impl<'a> Jam<'a> {
         })
     }
 
+    /// Returns a mapping of all available shortcuts to their associated target
+    /// names. The returned shortcuts are already reconciled and unambiguous.
+    pub fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>> {
+        let mut mappings: Vec<(Shortcut, &str)> = self
+            .shortcuts
+            .iter()
+            .map(|(shortcut, nidxes)| -> ExecResult<Vec<(Shortcut, &str)>> {
+                let shortcut = Shortcut::from(shortcut);
+                if nidxes.len() == 1 {
+                    return Ok(vec![(shortcut, self.dag[nidxes[0]].name)]);
+                }
+
+                // If there are multiple though, we should reconcile and return
+                // the shortcuts with the reconciled character added.
+                let reconciliation_chars = self.reconcile(&shortcut, &nidxes)?;
+                reconciliation_chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| Ok((shortcut.append(c), self.dag[nidxes[i]].name)))
+                    .collect()
+            })
+            .collect::<ExecResult<Vec<Vec<(Shortcut, &str)>>>>()?
+            .into_iter()
+            .flatten() // Flattens the Vec<Vec<...>> into Vec<...>.
+            .collect();
+
+        // Sort so that the return value is deterministic.
+        mappings.sort();
+        Ok(mappings)
+    }
+
     /// Takes a shortcut and determines what all the possible subsequent keys
     /// and their associated targets could be. In other words, it advances the
     /// current shortcut by computing all the possibilities that come next.
@@ -470,13 +507,20 @@ impl<'a> Jam<'a> {
         Ok(())
     }
 
+    /// resolve_shortcut takes a shortcut and returns the target(s) that it
+    /// refers to by their node indexes. This method is special because it is
+    /// capable of recognizing shortcuts with reconciliation characters, and
+    /// deducing what target the given reconciled shortcut refers to.
     fn resolve_shortcut(&self, shortcut: &Shortcut) -> ExecResult<Vec<NodeIdx>> {
         let shortcuts_ref = &self.shortcuts;
         let target_idxes;
         match shortcuts_ref.get(shortcut.iter()) {
             Some(nidxes) => target_idxes = nidxes.to_vec(),
             None => {
-                debug!(self.logger, "found ambiguity, attempting reconciliation");
+                debug!(
+                    self.logger,
+                    "found potential reconciliation character, attempting reconciliation"
+                );
                 // In this case, it is possible that the user has
                 // actually specified a reconciliation character,
                 // which won't exist in the trie until we
@@ -1151,5 +1195,25 @@ mod tests {
                 assert!(!check_file(broh_file));
             }
         }
+    }
+
+    #[test]
+    fn test_mappings() {
+        let mut cfg = Config::with_targets(vec![
+            target::lone("foo"),
+            target::lone("bar"),
+            target::lone("baz"),
+        ]);
+        use crate::reconciler::Strategy;
+        cfg.options.reconciliation_strategy = Strategy::FirstNonMatch;
+        let jam = get_jam(&cfg);
+        assert_eq!(
+            jam.mappings().expect("failed to get mappings"),
+            vec![
+                (Shortcut::from_shortcut_str("b-r"), "bar"),
+                (Shortcut::from_shortcut_str("b-z"), "baz"),
+                (Shortcut::from_shortcut_str("f"), "foo")
+            ]
+        );
     }
 }
