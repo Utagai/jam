@@ -158,6 +158,7 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
             app.reverse();
             Ok(Response::Request)
         }
+        KeyCode::Esc => Ok(Response::Exit),
         KeyCode::Char(key) => {
             if app.is_valid_key(&key) {
                 // Update app (and its state) with the new keypress:
