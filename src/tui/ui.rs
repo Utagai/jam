@@ -30,7 +30,7 @@ pub fn ui(f: &mut Frame, state: State) {
             Constraint::Length(1), // Current prefix indicator.
             Constraint::Max(2),    // Error section.
             Constraint::Length(1), // Ellipses
-            Constraint::Max(1),    // Potential help region.
+            Constraint::Max(6),    // Potential help region.
         ])
         .split(term_region);
 
@@ -120,7 +120,7 @@ fn draw_help_text(f: &mut Frame, region: Rect) {
     let fg_color_style = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::ITALIC);
-    let help_text = Paragraph::new("? - help").style(fg_color_style);
+    let help_text = Paragraph::new("? - toggle help").style(fg_color_style);
     f.render_widget(help_text, region)
 }
 
@@ -165,12 +165,58 @@ fn draw_potential_help(f: &mut Frame, region: Rect, help_mode: bool) {
         return;
     }
 
-    let help_para = Paragraph::new("help mode active").style(
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::ITALIC),
-    );
-    f.render_widget(help_para, region)
+    // Draw a divider:
+    let divider = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Some "),
+            Span::styled(
+                "helpful ",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+            Span::raw("things ==="),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "'.'",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(
+                " to execute the current prefix, assuming it points to something executable.",
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "<backspace>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to undo a character you've pressed and go back up the tree."),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "<Control-C>/<Esc>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to exit Jam :(."),
+        ]),
+        Line::from(vec![
+            Span::raw("• "),
+            Span::styled("READ ", Style::default().fg(Color::LightRed)),
+            Span::raw("the README.md (pls)!"),
+        ]),
+    ]);
+    f.render_widget(divider, region);
 }
 
 #[cfg(test)]
