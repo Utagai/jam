@@ -23,6 +23,7 @@ struct App<'a> {
     next: Vec<NextKey<'a>>,
     errmsg: String,
     logger: Logger,
+    help_mode: bool,
 }
 
 impl<'a> App<'a> {
@@ -37,6 +38,7 @@ impl<'a> App<'a> {
             next: next_keys,
             errmsg: String::from(""),
             logger,
+            help_mode: false,
         }
     }
 
@@ -67,6 +69,10 @@ impl<'a> App<'a> {
     fn is_valid_key(&self, key: &char) -> bool {
         self.next.iter().any(|nk| nk.key() == *key)
     }
+
+    fn toggle_help(&mut self) {
+        self.help_mode = !self.help_mode;
+    }
 }
 
 enum Response {
@@ -93,6 +99,7 @@ fn run_app<B: Backend>(
             errmsg: &app.errmsg,
             prefix: &app.prefix,
             tick,
+            help_mode: app.help_mode,
         };
         // Does the actual drawing of the UI!
         // Note that we make a _call_ to ui() here, we are re-creating
@@ -159,6 +166,10 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
             Ok(Response::Request)
         }
         KeyCode::Esc => Ok(Response::Exit),
+        KeyCode::Char('?') => {
+            app.toggle_help();
+            Ok(Response::Request)
+        }
         KeyCode::Char(key) => {
             if app.is_valid_key(&key) {
                 // Update app (and its state) with the new keypress:

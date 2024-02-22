@@ -16,6 +16,7 @@ pub(super) struct State<'a> {
     pub(super) errmsg: &'a str,
     pub(super) prefix: &'a Shortcut,
     pub(super) tick: u64,
+    pub(super) help_mode: bool,
 }
 
 pub fn ui(f: &mut Frame, state: State) {
@@ -29,6 +30,7 @@ pub fn ui(f: &mut Frame, state: State) {
             Constraint::Length(1), // Current prefix indicator.
             Constraint::Max(2),    // Error section.
             Constraint::Length(1), // Ellipses
+            Constraint::Max(1),    // Potential help region.
         ])
         .split(term_region);
 
@@ -40,6 +42,7 @@ pub fn ui(f: &mut Frame, state: State) {
     draw_current_prefix(f, main_regions[1], &state.prefix);
     draw_help(f, main_regions[2], &state.errmsg);
     draw_waiting_anim(f, main_regions[3], state.tick);
+    draw_potential_help(f, main_regions[4], state.help_mode);
 }
 
 fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>) {
@@ -157,6 +160,19 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64) {
     f.render_widget(ellipses, status_bar_regions[1]);
 }
 
+fn draw_potential_help(f: &mut Frame, region: Rect, help_mode: bool) {
+    if !help_mode {
+        return;
+    }
+
+    let help_para = Paragraph::new("help mode active").style(
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC),
+    );
+    f.render_widget(help_para, region)
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::{
@@ -199,6 +215,7 @@ mod tests {
                             target_name: "build",
                         }],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
@@ -281,6 +298,7 @@ mod tests {
                             },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
@@ -372,6 +390,7 @@ mod tests {
                             prefix: &crate::jam::Shortcut(vec!['h', 'y']),
                             key_target_pairs: &vec![],
                             tick: i as u64,
+                            help_mode: false,
                         },
                     )
                 })
@@ -432,6 +451,7 @@ mod tests {
                         prefix: &crate::jam::Shortcut(vec![]),
                         key_target_pairs: &vec![],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
@@ -493,6 +513,7 @@ mod tests {
                             NextKey::BranchKey { key: 'b' },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
@@ -588,6 +609,7 @@ mod tests {
                             NextKey::BranchKey { key: 'b' },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
