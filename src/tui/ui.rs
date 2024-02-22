@@ -53,7 +53,7 @@ fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>) {
 static PREFIX_MARKER: &str = "...";
 
 fn key_text<'a>(key_to_name: &'a Vec<NextKey>) -> Vec<Line<'a>> {
-    let lines_to_render: Vec<(&char, &str, &str)> = key_to_name
+    let text_to_render: Vec<(&char, &str, &str)> = key_to_name
         .iter()
         .map(|nk| match nk {
             NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
@@ -62,15 +62,15 @@ fn key_text<'a>(key_to_name: &'a Vec<NextKey>) -> Vec<Line<'a>> {
         .collect();
 
     // Text to show in paragraph.
-    let spans_to_render = lines_to_render
+    let key_lines = text_to_render
         .iter()
-        .map(|(k, target_string, connector)| generate_spans_for_key(k, target_string, connector))
+        .map(|(k, target_string, connector)| generate_line_for_key(k, target_string, connector))
         .collect::<Vec<Line>>();
 
-    spans_to_render
+    key_lines
 }
 
-fn generate_spans_for_key<'a>(k: &'a char, target_string: &'a str, connector: &'a str) -> Line<'a> {
+fn generate_line_for_key<'a>(k: &'a char, target_string: &'a str, connector: &'a str) -> Line<'a> {
     Line::from(vec![
         // Key.
         Span::styled(
@@ -94,7 +94,8 @@ fn generate_spans_for_key<'a>(k: &'a char, target_string: &'a str, connector: &'
     ])
 }
 
-fn draw_help(f: &mut Frame, region: Rect, errmsg: &str) {
+// This is really just writing the help toggle hint message and the line for containing any error message.
+fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str) {
     if errmsg.is_empty() {
         draw_help_text(f, region);
     } else {
