@@ -36,6 +36,9 @@ struct Cli {
     #[clap(long, conflicts_with = "exec_arg", default_value_t = false)]
     dump_mappings: bool,
 
+    #[clap(short, long)]
+    config_file: Option<String>,
+
     /// First execution argument. If using a shortcut, this is just the first character. Otherwise, it's the name of the target to execute.
     exec_arg: Option<String>,
 
@@ -60,12 +63,15 @@ impl KV for Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    let config_path = "./rsrc/simple.yaml";
-    let cfg: Config = serde_yaml::from_reader(File::open(config_path)?)?;
+    let cli = Cli::parse();
+
+    let config_path = cli
+        .config_file
+        .unwrap_or_else(|| "./rsrc/simple.yaml".to_string());
+
+    let cfg: Config = serde_yaml::from_reader(File::open(&config_path)?)?;
 
     let desugared_cfg = cfg.desugar();
-
-    let cli = Cli::parse();
 
     let logger = log::logger(
         cli.log_level
@@ -74,11 +80,6 @@ fn main() -> anyhow::Result<()> {
         config_path,
     );
     debug!(logger, "desugared config"; &desugared_cfg);
-    debug!(
-        logger,
-        "parsed CLI flags";
-        &cli
-    );
 
     let jam = Jam::new(&logger, Executor::new(), &desugared_cfg)?;
     info!(logger, "finished startup");

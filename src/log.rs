@@ -41,7 +41,7 @@ impl Level {
     }
 }
 
-pub fn logger(level: Level, config_path: &'static str) -> slog::Logger {
+pub fn logger(level: Level, config_path: String) -> slog::Logger {
     let version = env!("CARGO_PKG_VERSION");
     let cwd = std::env::current_dir()
         .expect("failed to get current working directory")
