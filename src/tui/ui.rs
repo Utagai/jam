@@ -285,6 +285,7 @@ mod tests {
         backend::TestBackend,
         buffer::Buffer,
         style::{Color, Modifier, Style},
+        text::{Line, Span},
         Terminal, TerminalOptions,
     };
 
@@ -292,6 +293,64 @@ mod tests {
         jam::NextKey,
         tui::ui::{ui, State},
     };
+
+    fn blank_line<'a>() -> Line<'a> {
+        Line::raw("                 ")
+    }
+
+    fn leaf_line<'a>(key: &'a str, target_name: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{key}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" ⇀ "), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("'{target_name}'"),
+                Style::default().fg(Color::LightGreen),
+            ),
+        ])
+    }
+
+    fn branch_line<'a>(key: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{key}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ⤙ ...", Style::default().fg(Color::DarkGray)),
+        ])
+    }
+
+    fn prefix_line(prefix: &str) -> Line {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("prefix: '{}'", prefix),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    }
+
+    fn toggle_help_line<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                "? - toggle help",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    }
+
+    fn waiting_animation_line<'a>(dots: usize) -> Line<'a> {
+        Line::from(vec![Span::raw(format!(" {}", "•".repeat(dots)))])
+    }
 
     // The tests here have to have proper styling information, which sucks cause TestBackend/Buffer
     // doesn't have any ergonomic APIs for specifying styling. There's probably some ways to make
@@ -327,44 +386,15 @@ mod tests {
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            "                 ",
-            " prefix: 'h-y-z' ",
-            " ? - toggle help ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // The prefix and help line should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 3).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
@@ -404,59 +434,16 @@ mod tests {
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            " b ⇀ 'run'       ",
-            "                 ",
-            " prefix: 'h-y-z' ",
-            " ? - toggle help ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            leaf_line("b", "run"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=9 {
-            expected.get_mut(i, 2).set_fg(Color::LightGreen);
-        }
-
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
@@ -464,7 +451,6 @@ mod tests {
     #[test]
     fn waiting_animation() {
         for i in 1..=3 {
-            // The width changes as we add more dots, which corresponds to the loop variable.
             let width = 17;
             let backend = TestBackend::new(width, 6);
             let mut terminal = Terminal::with_options(
@@ -489,32 +475,14 @@ mod tests {
                 })
                 .expect("failed to draw");
 
-            let animation_line = format!(
-                " {}{}",
-                "•".repeat(i as usize),
-                " ".repeat((width - i) as usize - 1)
-            );
-            let mut expected = Buffer::with_lines(vec![
-                "                 ",
-                "                 ",
-                " prefix: 'h-y-z' ",
-                " ? - toggle help ",
-                &animation_line,
-                "                 ",
+            let expected = Buffer::with_lines(vec![
+                blank_line(),
+                blank_line(),
+                prefix_line("h-y-z"),
+                toggle_help_line(),
+                waiting_animation_line(i as usize),
+                blank_line(),
             ]);
-
-            for i in 1..=15 {
-                expected.get_mut(i, 2).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-                expected.get_mut(i, 3).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-            }
 
             terminal.backend().assert_buffer(&expected);
         }
@@ -522,7 +490,6 @@ mod tests {
 
     #[test]
     fn empty_prefix() {
-        // The width changes as we add more dots, which corresponds to the loop variable.
         let backend = TestBackend::new(17, 6);
         let mut terminal = Terminal::with_options(
             backend,
@@ -546,31 +513,14 @@ mod tests {
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            "                 ",
-            " prefix: ''      ",
-            " ? - toggle help ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            blank_line(),
+            prefix_line(""),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        for i in 1..=10 {
-            expected.get_mut(i, 2).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
-
-        // The help line should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 3).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
@@ -604,59 +554,16 @@ mod tests {
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⤙ ...         ",
-            " b ⤙ ...         ",
-            "                 ",
-            " prefix: 'h-y-z' ",
-            " ? - toggle help ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            branch_line("a"),
+            branch_line("b"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
@@ -693,59 +600,16 @@ mod tests {
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            " b ⤙ ...         ",
-            "                 ",
-            " prefix: 'h-y-z' ",
-            " ? - toggle help ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            branch_line("b"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
