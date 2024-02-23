@@ -5,6 +5,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use std::iter;
 
 use crate::jam::{NextKey, Shortcut};
 
@@ -16,6 +17,7 @@ pub(super) struct State<'a> {
     pub(super) errmsg: &'a str,
     pub(super) prefix: &'a Shortcut,
     pub(super) tick: u64,
+    pub(super) help_mode: bool,
 }
 
 pub fn ui(f: &mut Frame, state: State) {
@@ -29,6 +31,7 @@ pub fn ui(f: &mut Frame, state: State) {
             Constraint::Length(1), // Current prefix indicator.
             Constraint::Max(2),    // Error section.
             Constraint::Length(1), // Ellipses
+            Constraint::Max(6),    // Potential help region.
         ])
         .split(term_region);
 
@@ -36,21 +39,25 @@ pub fn ui(f: &mut Frame, state: State) {
     // help section that includes any error messages and a mention of the help
     // key, and finally, a section for an animation indicating that we are
     // waiting on input.
-    draw_keys(f, main_regions[0], state.key_target_pairs);
-    draw_current_prefix(f, main_regions[1], &state.prefix);
-    draw_help(f, main_regions[2], &state.errmsg);
-    draw_waiting_anim(f, main_regions[3], state.tick);
+    // TODO: Maybe these should be methods of a State or other struct so we
+    // don't need to keep plumbing things.
+    draw_keys(f, main_regions[0], &state);
+    draw_current_prefix(f, main_regions[1], &state);
+    draw_diagnostics(f, main_regions[2], &state);
+    draw_waiting_anim(f, main_regions[3], &state);
+    draw_potential_help(f, main_regions[4], &state);
 }
 
-fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>) {
-    let keys_para = Paragraph::new(key_text(key_target_pairs)).alignment(Alignment::Left);
+fn draw_keys(f: &mut Frame, region: Rect, state: &State) {
+    let keys_para = Paragraph::new(key_text(state)).alignment(Alignment::Left);
     f.render_widget(keys_para, region)
 }
 
 static PREFIX_MARKER: &str = "...";
 
-fn key_text<'a>(key_to_name: &'a Vec<NextKey>) -> Vec<Line<'a>> {
-    let lines_to_render: Vec<(&char, &str, &str)> = key_to_name
+fn key_text<'a>(state: &'a State) -> Vec<Line<'a>> {
+    let text_to_render: Vec<(&char, &str, &str)> = state
+        .key_target_pairs
         .iter()
         .map(|nk| match nk {
             NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
@@ -59,16 +66,23 @@ fn key_text<'a>(key_to_name: &'a Vec<NextKey>) -> Vec<Line<'a>> {
         .collect();
 
     // Text to show in paragraph.
-    let spans_to_render = lines_to_render
+    let key_lines = text_to_render
         .iter()
-        .map(|(k, target_string, connector)| generate_spans_for_key(k, target_string, connector))
+        .map(|(k, target_string, connector)| {
+            generate_line_for_key(k, target_string, connector, state.help_mode)
+        })
         .collect::<Vec<Line>>();
 
-    spans_to_render
+    key_lines
 }
 
-fn generate_spans_for_key<'a>(k: &'a char, target_string: &'a str, connector: &'a str) -> Line<'a> {
-    Line::from(vec![
+fn generate_line_for_key<'a>(
+    k: &'a char,
+    target_string: &'a str,
+    connector: &'a str,
+    help_mode: bool,
+) -> Line<'a> {
+    let mut spans = vec![
         // Key.
         Span::styled(
             format!("{k}"),
@@ -76,61 +90,88 @@ fn generate_spans_for_key<'a>(k: &'a char, target_string: &'a str, connector: &'
         ),
         // Connector (e.g. an arrow).
         Span::styled(connector.to_string(), Style::default().fg(Color::DarkGray)),
-        // The target name or marker.
-        if target_string == PREFIX_MARKER {
-            Span::styled(
-                format!("{target_string}"),
-                Style::default().fg(Color::DarkGray),
-            )
-        } else {
-            Span::styled(
-                format!("'{target_string}'"),
-                Style::default().fg(Color::LightGreen),
-            )
-        },
-    ])
+    ];
+
+    // The target name or marker.
+    if target_string == PREFIX_MARKER {
+        spans.push(Span::styled(
+            format!("{target_string}"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        spans.push(Span::styled(
+            format!("'{target_string}'"),
+            Style::default().fg(Color::LightGreen),
+        ));
+    }
+
+    // Help annotation message.
+    let msg = if target_string == PREFIX_MARKER {
+        format!("Hit '{k}' to continue the current prefix in the tree.")
+    } else {
+        format!("Hit '{k}' to execute the '{target_string}' target.")
+    };
+    annotate_help(Line::from(spans), help_mode, msg)
 }
 
-fn draw_help(f: &mut Frame, region: Rect, errmsg: &str) {
-    if errmsg.is_empty() {
-        draw_help_text(f, region);
+// This is really just writing the help toggle hint message and the line for containing any error message.
+fn draw_diagnostics(f: &mut Frame, region: Rect, state: &State) {
+    if state.errmsg.is_empty() {
+        draw_help_text(f, region, state.help_mode);
     } else {
         let subregions = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Length(1)])
             .split(region);
-        draw_error(f, subregions[0], errmsg);
-        draw_help_text(f, subregions[1]);
+        draw_error(f, subregions[0], state.errmsg, state.help_mode);
+        draw_help_text(f, subregions[1], state.help_mode);
     }
 }
 
-fn draw_error(f: &mut Frame, region: Rect, errmsg: &str) {
-    let error_para = Paragraph::new(Line::from(errmsg.to_string())).style(
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(Color::LightRed),
+fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
+    let error_line = annotate_help(
+        Line::from(Span::styled(
+            errmsg.to_string(),
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::LightRed),
+        )),
+        help_mode,
+        "The last triggered error.",
     );
-    f.render_widget(error_para, region)
+    f.render_widget(Paragraph::new(error_line), region)
 }
 
-fn draw_help_text(f: &mut Frame, region: Rect) {
-    let fg_color_style = Style::default()
-        .fg(Color::DarkGray)
-        .add_modifier(Modifier::ITALIC);
-    let help_text = Paragraph::new("? - help").style(fg_color_style);
-    f.render_widget(help_text, region)
-}
-
-fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut) {
-    let prefix_para = Paragraph::new(Line::from(format!("prefix: '{}'", prefix,))).style(
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::ITALIC),
+fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
+    let help_line = annotate_help(
+        Line::from(Span::styled(
+            "? - toggle help",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )),
+        help_mode,
+        "Toggles this annotated view!",
     );
-    f.render_widget(prefix_para, region)
+    f.render_widget(Paragraph::new(help_line), region)
 }
 
-fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64) {
+fn draw_current_prefix(f: &mut Frame, region: Rect, state: &State) {
+    let prefix_descr = state.prefix.to_string().replace("-", ", then ");
+    let prefix_line = annotate_help(
+        Line::from(Span::styled(
+            format!("prefix: '{}'", state.prefix),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )),
+        state.help_mode,
+        &format!("This is the current prefix. You've pressed '{prefix_descr}' so far."),
+    );
+    f.render_widget(prefix_line, region)
+}
+
+fn draw_waiting_anim(f: &mut Frame, region: Rect, state: &State) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
@@ -150,19 +191,119 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64) {
     // at N, after which we reset ala modulo.
     // NOTE: Since we want 3 max bullets, and we're using %, we need
     // to do % (N+1).
-    let num_ellipses = tick % (max_num_ellipses + 1);
-    let ellipses = Paragraph::new("•".repeat(num_ellipses as usize)).style(Style::default());
+    let num_ellipses = state.tick % (max_num_ellipses + 1);
 
     // Draw the three sections of the status bar:
-    f.render_widget(ellipses, status_bar_regions[1]);
+    f.render_widget(
+        annotate_help(
+            Line::raw("•".repeat(num_ellipses as usize)),
+            state.help_mode,
+            "Just a waiting animation.",
+        ),
+        status_bar_regions[1],
+    );
 }
 
+fn annotate_help<'a, T>(line: Line<'a>, help_mode: bool, help_text: T) -> Line<'a>
+where
+    T: Into<String>,
+{
+    if !help_mode {
+        return line;
+    }
+
+    Line::from(
+        line.into_iter()
+            .chain(iter::once(Span::styled(
+                format!("    ({})", help_text.into()),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )))
+            .chain(iter::once(Span::raw(" ")))
+            .collect::<Vec<Span>>(),
+    )
+}
+
+fn draw_potential_help(f: &mut Frame, region: Rect, state: &State) {
+    if !state.help_mode {
+        return;
+    }
+
+    // Draw a divider:
+    let divider = Paragraph::new(vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::raw("Some "),
+            Span::styled(
+                "helpful ",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+            Span::raw("things ==="),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "'.'",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(
+                " to execute the current prefix, assuming it points to something executable.",
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "<backspace>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to undo a character you've pressed and go back up the tree."),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
+                "<Control-C>/<Esc>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to exit Jam :(."),
+        ]),
+        Line::from(vec![
+            Span::raw("• "),
+            Span::styled("READ ", Style::default().fg(Color::LightRed)),
+            Span::raw("the README.md (pls)!"),
+        ]),
+    ]);
+    f.render_widget(divider, region);
+}
+
+// NOTE: These tests are a bit of a mess. Part of it I'm 100% sure is my own
+// fault, but I do think a good deal of it is due to the nature of testing TUIs
+// and the way TestBackend works. I'm actually quite uncharacteristically sure
+// of this becauase this opinion is actually held by lots of people in or using
+// the ratatui project. I even had a maintainer/moderator from the ratatui
+// Discord mention it (and appreciate my idea of using & styling Line! Yay!).
+// Anyways, it's just really finicky and often you'll fail tests for a single
+// character having the wrong color, and often its a white space character so
+// who even cares? Anyways, just keep that in mind.
+// NOTE: Oh yea, and remember that we use a margin on the app which means you
+// gotta remember about extra spaces on basically every line we're asserting on.
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use ratatui::{
         backend::TestBackend,
         buffer::Buffer,
         style::{Color, Modifier, Style},
+        text::{Line, Span},
         Terminal, TerminalOptions,
     };
 
@@ -171,13 +312,238 @@ mod tests {
         tui::ui::{ui, State},
     };
 
-    // The tests here have to have proper styling information, which sucks cause TestBackend/Buffer
-    // doesn't have any ergonomic APIs for specifying styling. There's probably some ways to make
-    // this easier but they're kind of hairy (e.g. designing a DSL for specifying styling, or using
-    // a macro to generate the expected buffer). For now, I'm just going to manually specify the
-    // styling information.
+    fn blank_line<'a>() -> Line<'a> {
+        Line::raw("                 ")
+    }
+
+    fn annotate_help_test<'a>(line: Line<'a>, help_text: &'a str) -> Line<'a> {
+        Line::from(
+            line.into_iter()
+                .chain(iter::once(Span::styled(
+                    format!("    ({help_text})"),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )))
+                .chain(iter::once(Span::styled(" ", Style::default())))
+                .collect::<Vec<Span>>(),
+        )
+    }
+
+    fn leaf_line<'a>(key: &'a str, target_name: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{key}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" ⇀ "), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("'{target_name}'"),
+                Style::default().fg(Color::LightGreen),
+            ),
+        ])
+    }
+
+    fn branch_line<'a>(key: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{key}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ⤙ ...", Style::default().fg(Color::DarkGray)),
+        ])
+    }
+
+    fn prefix_line(prefix: &str) -> Line {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("prefix: '{}'", prefix),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    }
+
+    fn toggle_help_line<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                "? - toggle help",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    }
+
+    fn error_line<'a>(errmsg: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{errmsg}"),
+                Style::default()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    }
+
+    fn waiting_animation_line<'a>(dots: usize) -> Line<'a> {
+        Line::from(vec![Span::raw(format!(" {}", "•".repeat(dots)))])
+    }
+
+    fn help_text_title<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" Some "),
+            Span::styled(
+                "helpful ",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+            Span::raw("things ==="),
+        ])
+    }
+
+    fn help_text_period_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "'.'",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(
+                " to execute the current prefix, assuming it points to something executable.",
+            ),
+        ])
+    }
+
+    fn help_text_backspace_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "<backspace>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to undo a character you've pressed and go back up the tree."),
+        ])
+    }
+
+    fn help_text_exit_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "<Control-C>/<Esc>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to exit Jam :(."),
+        ])
+    }
+
+    fn help_text_readme_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • "),
+            Span::styled("READ ", Style::default().fg(Color::LightRed)),
+            Span::raw("the README.md (pls)!"),
+        ])
+    }
+
     #[test]
     fn single_target() {
+        let backend = TestBackend::new(17, 7);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        key_target_pairs: &vec![NextKey::LeafKey {
+                            key: 'a',
+                            target_name: "build",
+                        }],
+                        tick: 1,
+                        help_mode: false,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn has_error() {
+        let backend = TestBackend::new(17, 7);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "some error",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        key_target_pairs: &vec![NextKey::LeafKey {
+                            key: 'a',
+                            target_name: "build",
+                        }],
+                        tick: 1,
+                        help_mode: false,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            error_line("some error"),
+            waiting_animation_line(1),
+            blank_line(),
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn multiple_targets() {
         let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
@@ -193,83 +559,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
-                        key_target_pairs: &vec![NextKey::LeafKey {
-                            key: 'a',
-                            target_name: "build",
-                        }],
-                        tick: 1,
-                    },
-                )
-            })
-            .expect("failed to draw");
-
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
-            " •               ",
-            "                 ",
-        ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 3).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
-
-        terminal.backend().assert_buffer(&expected);
-    }
-
-    #[test]
-    fn multiple_targets() {
-        let backend = TestBackend::new(17, 9);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: ratatui::Viewport::Inline(16),
-            },
-        )
-        .unwrap();
-
-        terminal
-            .draw(|f| {
-                ui(
-                    f,
-                    State {
-                        errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -281,71 +571,22 @@ mod tests {
                             },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            " b ⇀ 'run'       ",
-            "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            leaf_line("b", "run"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⇀ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The target name should be in light green.
-        for i in 5..=9 {
-            expected.get_mut(i, 2).set_fg(Color::LightGreen);
-        }
-
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 6).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
@@ -353,9 +594,8 @@ mod tests {
     #[test]
     fn waiting_animation() {
         for i in 1..=3 {
-            // The width changes as we add more dots, which corresponds to the loop variable.
-            let width = 16 + i;
-            let backend = TestBackend::new(width, 7);
+            let width = 17;
+            let backend = TestBackend::new(width, 6);
             let mut terminal = Terminal::with_options(
                 backend,
                 TerminalOptions {
@@ -369,44 +609,23 @@ mod tests {
                         f,
                         State {
                             errmsg: "",
-                            prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![],
                             tick: i as u64,
+                            help_mode: false,
                         },
                     )
                 })
                 .expect("failed to draw");
 
-            let animation_line = format!(" {}               ", "•".repeat(i as usize));
-            let mut expected = Buffer::with_lines(vec![
-                "                 ",
-                "                 ",
-                " prefix: 'h-y'   ",
-                " ? - help        ",
-                "                 ",
-                &animation_line,
-                "                 ",
+            let expected = Buffer::with_lines(vec![
+                blank_line(),
+                blank_line(),
+                prefix_line("h-y-z"),
+                toggle_help_line(),
+                waiting_animation_line(i as usize),
+                blank_line(),
             ]);
-
-            // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-            for i in 1..width - 1 {
-                println!("i: {}", i);
-                expected.get_mut(i, 2).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-                expected.get_mut(i, 3).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-                expected.get_mut(i, 4).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-            }
 
             terminal.backend().assert_buffer(&expected);
         }
@@ -414,8 +633,7 @@ mod tests {
 
     #[test]
     fn empty_prefix() {
-        // The width changes as we add more dots, which corresponds to the loop variable.
-        let backend = TestBackend::new(17, 7);
+        let backend = TestBackend::new(17, 6);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -432,47 +650,27 @@ mod tests {
                         prefix: &crate::jam::Shortcut(vec![]),
                         key_target_pairs: &vec![],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            "                 ",
-            " prefix: ''      ",
-            " ? - help        ",
-            "                 ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            blank_line(),
+            prefix_line(""),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            println!("i: {}", i);
-            expected.get_mut(i, 2).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 3).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
 
     #[test]
     fn branching_targets() {
-        let backend = TestBackend::new(17, 9);
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -487,84 +685,35 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::BranchKey { key: 'a' },
                             NextKey::BranchKey { key: 'b' },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⤙ ...         ",
-            " b ⤙ ...         ",
-            "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            branch_line("a"),
+            branch_line("b"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
-
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 6).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
 
         terminal.backend().assert_buffer(&expected);
     }
 
     #[test]
     fn leaf_and_branching_targets() {
-        let backend = TestBackend::new(17, 9);
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -579,7 +728,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -588,72 +737,90 @@ mod tests {
                             NextKey::BranchKey { key: 'b' },
                         ],
                         tick: 1,
+                        help_mode: false,
                     },
                 )
             })
             .expect("failed to draw");
 
-        let mut expected = Buffer::with_lines(vec![
-            "                 ",
-            " a ⇀ 'build'     ",
-            " b ⤙ ...         ",
-            "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
-            " •               ",
-            "                 ",
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            branch_line("b"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
         ]);
 
-        // 'a' is bold:
-        expected
-            .get_mut(1, 1)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 1).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..=11 {
-            expected.get_mut(i, 1).set_fg(Color::LightGreen);
-        }
-
-        // 'b' is bold:
-        expected
-            .get_mut(1, 2)
-            .set_style(Style::default().add_modifier(Modifier::BOLD));
-
-        // ' ⤙ ' is dark gray:
-        for i in 2..=4 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The ellipses should be in dark gray.
-        for i in 5..8 {
-            expected.get_mut(i, 2).set_fg(Color::DarkGray);
-        }
-
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            expected.get_mut(i, 4).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 6).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-        }
-
         terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn help_mode_no_error() {
+        let backend = TestBackend::new(93, 14);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        for errmsg in &["", "some error"] {
+            terminal
+                .draw(|f| {
+                    ui(
+                        f,
+                        State {
+                            errmsg,
+                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                            key_target_pairs: &vec![
+                                NextKey::LeafKey {
+                                    key: 'a',
+                                    target_name: "build",
+                                },
+                                NextKey::BranchKey { key: 'b' },
+                            ],
+                            tick: 1,
+                            help_mode: true,
+                        },
+                    )
+                })
+                .expect("failed to draw");
+
+            let expected = Buffer::with_lines(vec![
+                blank_line(),
+                annotate_help_test(
+                    leaf_line("a", "build"),
+                    "Hit 'a' to execute the 'build' target.",
+                ),
+                annotate_help_test(
+                    branch_line("b"),
+                    "Hit 'b' to continue the current prefix in the tree.",
+                ),
+                blank_line(),
+                annotate_help_test(
+                    prefix_line("h-y-z"),
+                    "This is the current prefix. You've pressed 'h, then y, then z' so far.",
+                ),
+                if errmsg.is_empty() {
+                    annotate_help_test(toggle_help_line(), "Toggles this annotated view!")
+                } else {
+                    annotate_help_test(error_line(errmsg), "The last triggered error.")
+                },
+                annotate_help_test(waiting_animation_line(1), "Just a waiting animation."),
+                blank_line(),
+                help_text_title(),
+                help_text_period_tip(),
+                help_text_backspace_tip(),
+                help_text_exit_tip(),
+                help_text_readme_tip(),
+                blank_line(),
+            ]);
+
+            terminal.backend().assert_buffer(&expected);
+        }
     }
 }
