@@ -130,12 +130,12 @@ fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) 
 
 fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
     let error_line = annotate_help(
-        Line::from(vec![Span::styled(
+        Line::from(Span::styled(
             errmsg.to_string(),
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::LightRed),
-        )]),
+        )),
         help_mode,
         "The last triggered error.",
     );
@@ -159,12 +159,12 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
 fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode: bool) {
     let prefix_descr = prefix.to_string().replace("-", ", then ");
     let prefix_line = annotate_help(
-        Line::from(vec![Span::styled(
+        Line::from(Span::styled(
             format!("prefix: '{prefix}'"),
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
-        )]),
+        )),
         help_mode,
         &format!("This is the current prefix. You've pressed '{prefix_descr}' so far."),
     );
@@ -220,7 +220,7 @@ where
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             )))
-            .chain(iter::once(Span::styled(" ", Style::default())))
+            .chain(iter::once(Span::raw(" ")))
             .collect::<Vec<Span>>(),
     )
 }
@@ -232,7 +232,7 @@ fn draw_potential_help(f: &mut Frame, region: Rect, help_mode: bool) {
 
     // Draw a divider:
     let divider = Paragraph::new(vec![
-        Line::from(""),
+        Line::raw(""),
         Line::from(vec![
             Span::raw("Some "),
             Span::styled(
