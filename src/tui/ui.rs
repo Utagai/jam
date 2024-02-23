@@ -41,23 +41,23 @@ pub fn ui(f: &mut Frame, state: State) {
     // waiting on input.
     // TODO: Maybe these should be methods of a State or other struct so we
     // don't need to keep plumbing things.
-    draw_keys(f, main_regions[0], state.key_target_pairs, state.help_mode);
-    draw_current_prefix(f, main_regions[1], &state.prefix, state.help_mode);
-    draw_diagnostics(f, main_regions[2], &state.errmsg, state.help_mode);
-    draw_waiting_anim(f, main_regions[3], state.tick, state.help_mode);
-    draw_potential_help(f, main_regions[4], state.help_mode);
+    draw_keys(f, main_regions[0], &state);
+    draw_current_prefix(f, main_regions[1], &state);
+    draw_diagnostics(f, main_regions[2], &state);
+    draw_waiting_anim(f, main_regions[3], &state);
+    draw_potential_help(f, main_regions[4], &state);
 }
 
-fn draw_keys(f: &mut Frame, region: Rect, key_target_pairs: &Vec<NextKey>, help_mode: bool) {
-    let keys_para =
-        Paragraph::new(key_text(key_target_pairs, help_mode)).alignment(Alignment::Left);
+fn draw_keys(f: &mut Frame, region: Rect, state: &State) {
+    let keys_para = Paragraph::new(key_text(state)).alignment(Alignment::Left);
     f.render_widget(keys_para, region)
 }
 
 static PREFIX_MARKER: &str = "...";
 
-fn key_text<'a>(key_to_name: &'a Vec<NextKey>, help_mode: bool) -> Vec<Line<'a>> {
-    let text_to_render: Vec<(&char, &str, &str)> = key_to_name
+fn key_text<'a>(state: &'a State) -> Vec<Line<'a>> {
+    let text_to_render: Vec<(&char, &str, &str)> = state
+        .key_target_pairs
         .iter()
         .map(|nk| match nk {
             NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
@@ -69,7 +69,7 @@ fn key_text<'a>(key_to_name: &'a Vec<NextKey>, help_mode: bool) -> Vec<Line<'a>>
     let key_lines = text_to_render
         .iter()
         .map(|(k, target_string, connector)| {
-            generate_line_for_key(k, target_string, connector, help_mode)
+            generate_line_for_key(k, target_string, connector, state.help_mode)
         })
         .collect::<Vec<Line>>();
 
@@ -115,16 +115,16 @@ fn generate_line_for_key<'a>(
 }
 
 // This is really just writing the help toggle hint message and the line for containing any error message.
-fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
-    if errmsg.is_empty() {
-        draw_help_text(f, region, help_mode);
+fn draw_diagnostics(f: &mut Frame, region: Rect, state: &State) {
+    if state.errmsg.is_empty() {
+        draw_help_text(f, region, state.help_mode);
     } else {
         let subregions = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Length(1)])
             .split(region);
-        draw_error(f, subregions[0], errmsg, help_mode);
-        draw_help_text(f, subregions[1], help_mode);
+        draw_error(f, subregions[0], state.errmsg, state.help_mode);
+        draw_help_text(f, subregions[1], state.help_mode);
     }
 }
 
@@ -156,22 +156,22 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
     f.render_widget(Paragraph::new(help_line), region)
 }
 
-fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode: bool) {
-    let prefix_descr = prefix.to_string().replace("-", ", then ");
+fn draw_current_prefix(f: &mut Frame, region: Rect, state: &State) {
+    let prefix_descr = state.prefix.to_string().replace("-", ", then ");
     let prefix_line = annotate_help(
         Line::from(Span::styled(
-            format!("prefix: '{prefix}'"),
+            format!("prefix: '{}'", state.prefix),
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
         )),
-        help_mode,
+        state.help_mode,
         &format!("This is the current prefix. You've pressed '{prefix_descr}' so far."),
     );
     f.render_widget(prefix_line, region)
 }
 
-fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
+fn draw_waiting_anim(f: &mut Frame, region: Rect, state: &State) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
@@ -191,13 +191,13 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     // at N, after which we reset ala modulo.
     // NOTE: Since we want 3 max bullets, and we're using %, we need
     // to do % (N+1).
-    let num_ellipses = tick % (max_num_ellipses + 1);
+    let num_ellipses = state.tick % (max_num_ellipses + 1);
 
     // Draw the three sections of the status bar:
     f.render_widget(
         annotate_help(
             Line::raw("•".repeat(num_ellipses as usize)),
-            help_mode,
+            state.help_mode,
             "Just a waiting animation.",
         ),
         status_bar_regions[1],
@@ -225,8 +225,8 @@ where
     )
 }
 
-fn draw_potential_help(f: &mut Frame, region: Rect, help_mode: bool) {
-    if !help_mode {
+fn draw_potential_help(f: &mut Frame, region: Rect, state: &State) {
+    if !state.help_mode {
         return;
     }
 
