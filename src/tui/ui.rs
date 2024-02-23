@@ -300,7 +300,7 @@ mod tests {
     // styling information.
     #[test]
     fn single_target() {
-        let backend = TestBackend::new(17, 8);
+        let backend = TestBackend::new(17, 7);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -315,7 +315,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![NextKey::LeafKey {
                             key: 'a',
                             target_name: "build",
@@ -331,9 +331,8 @@ mod tests {
             "                 ",
             " a ⇀ 'build'     ",
             "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
+            " prefix: 'h-y-z' ",
+            " ? - toggle help ",
             " •               ",
             "                 ",
         ]);
@@ -353,7 +352,7 @@ mod tests {
             expected.get_mut(i, 1).set_fg(Color::LightGreen);
         }
 
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
+        // The prefix and help line should be italic and dark gray.
         for i in 1..=15 {
             expected.get_mut(i, 3).set_style(
                 Style::default()
@@ -365,11 +364,6 @@ mod tests {
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             );
-            expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
         }
 
         terminal.backend().assert_buffer(&expected);
@@ -377,7 +371,7 @@ mod tests {
 
     #[test]
     fn multiple_targets() {
-        let backend = TestBackend::new(17, 9);
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -392,7 +386,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -415,9 +409,8 @@ mod tests {
             " a ⇀ 'build'     ",
             " b ⇀ 'run'       ",
             "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
+            " prefix: 'h-y-z' ",
+            " ? - toggle help ",
             " •               ",
             "                 ",
         ]);
@@ -452,7 +445,6 @@ mod tests {
             expected.get_mut(i, 2).set_fg(Color::LightGreen);
         }
 
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
         for i in 1..=15 {
             expected.get_mut(i, 4).set_style(
                 Style::default()
@@ -460,11 +452,6 @@ mod tests {
                     .add_modifier(Modifier::ITALIC),
             );
             expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 6).set_style(
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
@@ -478,8 +465,8 @@ mod tests {
     fn waiting_animation() {
         for i in 1..=3 {
             // The width changes as we add more dots, which corresponds to the loop variable.
-            let width = 16 + i;
-            let backend = TestBackend::new(width, 7);
+            let width = 17;
+            let backend = TestBackend::new(width, 6);
             let mut terminal = Terminal::with_options(
                 backend,
                 TerminalOptions {
@@ -493,7 +480,7 @@ mod tests {
                         f,
                         State {
                             errmsg: "",
-                            prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![],
                             tick: i as u64,
                             help_mode: false,
@@ -502,31 +489,27 @@ mod tests {
                 })
                 .expect("failed to draw");
 
-            let animation_line = format!(" {}               ", "•".repeat(i as usize));
+            let animation_line = format!(
+                " {}{}",
+                "•".repeat(i as usize),
+                " ".repeat((width - i) as usize - 1)
+            );
             let mut expected = Buffer::with_lines(vec![
                 "                 ",
                 "                 ",
-                " prefix: 'h-y'   ",
-                " ? - help        ",
-                "                 ",
+                " prefix: 'h-y-z' ",
+                " ? - toggle help ",
                 &animation_line,
                 "                 ",
             ]);
 
-            // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-            for i in 1..width - 1 {
-                println!("i: {}", i);
+            for i in 1..=15 {
                 expected.get_mut(i, 2).set_style(
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::ITALIC),
                 );
                 expected.get_mut(i, 3).set_style(
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
-                expected.get_mut(i, 4).set_style(
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::ITALIC),
@@ -540,7 +523,7 @@ mod tests {
     #[test]
     fn empty_prefix() {
         // The width changes as we add more dots, which corresponds to the loop variable.
-        let backend = TestBackend::new(17, 7);
+        let backend = TestBackend::new(17, 6);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -567,26 +550,22 @@ mod tests {
             "                 ",
             "                 ",
             " prefix: ''      ",
-            " ? - help        ",
-            "                 ",
+            " ? - toggle help ",
             " •               ",
             "                 ",
         ]);
 
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
-        for i in 1..=15 {
-            println!("i: {}", i);
+        for i in 1..=10 {
             expected.get_mut(i, 2).set_style(
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             );
+        }
+
+        // The help line should be italic and dark gray.
+        for i in 1..=15 {
             expected.get_mut(i, 3).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 4).set_style(
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
@@ -598,7 +577,7 @@ mod tests {
 
     #[test]
     fn branching_targets() {
-        let backend = TestBackend::new(17, 9);
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -613,7 +592,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::BranchKey { key: 'a' },
                             NextKey::BranchKey { key: 'b' },
@@ -630,9 +609,8 @@ mod tests {
             " a ⤙ ...         ",
             " b ⤙ ...         ",
             "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
+            " prefix: 'h-y-z' ",
+            " ? - toggle help ",
             " •               ",
             "                 ",
         ]);
@@ -667,7 +645,6 @@ mod tests {
             expected.get_mut(i, 2).set_fg(Color::DarkGray);
         }
 
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
         for i in 1..=15 {
             expected.get_mut(i, 4).set_style(
                 Style::default()
@@ -679,11 +656,6 @@ mod tests {
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             );
-            expected.get_mut(i, 6).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
         }
 
         terminal.backend().assert_buffer(&expected);
@@ -691,7 +663,7 @@ mod tests {
 
     #[test]
     fn leaf_and_branching_targets() {
-        let backend = TestBackend::new(17, 9);
+        let backend = TestBackend::new(17, 8);
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
@@ -706,7 +678,7 @@ mod tests {
                     f,
                     State {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y']),
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -726,9 +698,8 @@ mod tests {
             " a ⇀ 'build'     ",
             " b ⤙ ...         ",
             "                 ",
-            " prefix: 'h-y'   ",
-            " ? - help        ",
-            "                 ",
+            " prefix: 'h-y-z' ",
+            " ? - toggle help ",
             " •               ",
             "                 ",
         ]);
@@ -763,7 +734,6 @@ mod tests {
             expected.get_mut(i, 2).set_fg(Color::DarkGray);
         }
 
-        // The prefix, help line and empty line (for error cases) should be italic and dark gray.
         for i in 1..=15 {
             expected.get_mut(i, 4).set_style(
                 Style::default()
@@ -771,11 +741,6 @@ mod tests {
                     .add_modifier(Modifier::ITALIC),
             );
             expected.get_mut(i, 5).set_style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            );
-            expected.get_mut(i, 6).set_style(
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
