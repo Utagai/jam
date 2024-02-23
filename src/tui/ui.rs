@@ -138,7 +138,7 @@ fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::LightRed),
         ),
-        annotate_help("the last triggered error", help_mode),
+        annotate_help("The last triggered error.", help_mode),
     ]));
     f.render_widget(error_para, region)
 }
@@ -764,53 +764,60 @@ mod tests {
         )
         .unwrap();
 
-        terminal
-            .draw(|f| {
-                ui(
-                    f,
-                    State {
-                        errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
-                        key_target_pairs: &vec![
-                            NextKey::LeafKey {
-                                key: 'a',
-                                target_name: "build",
-                            },
-                            NextKey::BranchKey { key: 'b' },
-                        ],
-                        tick: 1,
-                        help_mode: true,
-                    },
-                )
-            })
-            .expect("failed to draw");
+        for errmsg in &["", "some error"] {
+            // Your code here
+            terminal
+                .draw(|f| {
+                    ui(
+                        f,
+                        State {
+                            errmsg,
+                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                            key_target_pairs: &vec![
+                                NextKey::LeafKey {
+                                    key: 'a',
+                                    target_name: "build",
+                                },
+                                NextKey::BranchKey { key: 'b' },
+                            ],
+                            tick: 1,
+                            help_mode: true,
+                        },
+                    )
+                })
+                .expect("failed to draw");
 
-        let expected = Buffer::with_lines(vec![
-            blank_line(),
-            annotate_line(
-                leaf_line("a", "build"),
-                "Hit 'a' to execute the 'build' target.",
-            ),
-            annotate_line(
-                branch_line("b"),
-                "Hit 'b' to continue the current prefix in the tree.",
-            ),
-            blank_line(),
-            annotate_line(
-                prefix_line("h-y-z"),
-                "This is the current prefix. You've pressed 'h, then y, then z' so far.",
-            ),
-            annotate_line(toggle_help_line(), "Toggles this annotated view!"),
-            annotate_line(waiting_animation_line(1), "Just a waiting animation."),
-            blank_line(),
-            help_text_title(),
-            help_text_period_tip(),
-            help_text_backspace_tip(),
-            help_text_exit_tip(),
-            help_text_readme_tip(),
-            blank_line(),
-        ]);
+            let expected = Buffer::with_lines(vec![
+                blank_line(),
+                annotate_line(
+                    leaf_line("a", "build"),
+                    "Hit 'a' to execute the 'build' target.",
+                ),
+                annotate_line(
+                    branch_line("b"),
+                    "Hit 'b' to continue the current prefix in the tree.",
+                ),
+                blank_line(),
+                annotate_line(
+                    prefix_line("h-y-z"),
+                    "This is the current prefix. You've pressed 'h, then y, then z' so far.",
+                ),
+                if errmsg.is_empty() {
+                    annotate_line(toggle_help_line(), "Toggles this annotated view!")
+                } else {
+                    annotate_line(error_line(errmsg), "The last triggered error.")
+                },
+                annotate_line(waiting_animation_line(1), "Just a waiting animation."),
+                blank_line(),
+                help_text_title(),
+                help_text_period_tip(),
+                help_text_backspace_tip(),
+                help_text_exit_tip(),
+                help_text_readme_tip(),
+                blank_line(),
+            ]);
 
-        terminal.backend().assert_buffer(&expected);
+            terminal.backend().assert_buffer(&expected);
+        }
     }
 }
