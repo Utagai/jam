@@ -156,6 +156,7 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
 }
 
 fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode: bool) {
+    let prefix_descr = prefix.to_string().replace("-", ", then ");
     let prefix_para = Paragraph::new(Line::from(vec![
         Span::styled(
             format!("prefix: '{prefix}'"),
@@ -164,7 +165,7 @@ fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode
                 .add_modifier(Modifier::ITALIC),
         ),
         annotate_help(
-            format!("This is the current prefix. You've pressed '{prefix}' so far."), // TODO: We should reformat the prefix string to be more explanatory.
+            format!("This is the current prefix. You've pressed '{prefix_descr}' so far.",),
             help_mode,
         ),
     ]));
