@@ -96,7 +96,7 @@ fn generate_line_for_key<'a>(
                 format!("{target_string}"),
                 Style::default().fg(Color::DarkGray),
             ),
-            annot(
+            annotate_help(
                 format!("Hit '{k}' to continue the current prefix in the tree."),
                 help_mode,
             ),
@@ -107,7 +107,7 @@ fn generate_line_for_key<'a>(
                 format!("'{target_string}'"),
                 Style::default().fg(Color::LightGreen),
             ),
-            annot(
+            annotate_help(
                 format!("Hit '{k}' to execute the '{target_string}' target."),
                 help_mode,
             ),
@@ -133,7 +133,7 @@ fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) 
 fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
     let error_para = Paragraph::new(Line::from(vec![
         Span::raw(errmsg.to_string()),
-        annot("the last triggered error", help_mode),
+        annotate_help("the last triggered error", help_mode),
     ]))
     .style(
         Style::default()
@@ -149,7 +149,7 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
         .add_modifier(Modifier::ITALIC);
     let help_text = Paragraph::new(Line::from(vec![
         Span::raw("? - toggle help"),
-        annot("Toggles this annotated view!", help_mode),
+        annotate_help("Toggles this annotated view!", help_mode),
     ]))
     .style(fg_color_style);
     f.render_widget(help_text, region)
@@ -163,7 +163,7 @@ fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
         ),
-        annot(
+        annotate_help(
             format!("This is the current prefix. You've pressed '{prefix}' so far."), // TODO: We should reformat the prefix string to be more explanatory.
             help_mode,
         ),
@@ -194,7 +194,7 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     let num_ellipses = tick % (max_num_ellipses + 1);
     let ellipses = Paragraph::new(Line::from(vec![
         Span::raw("•".repeat(num_ellipses as usize)),
-        annot("Just a waiting animation.", help_mode),
+        annotate_help("Just a waiting animation.", help_mode),
     ]))
     .style(Style::default());
 
@@ -202,7 +202,7 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     f.render_widget(ellipses, status_bar_regions[1]);
 }
 
-fn annot<'a, T>(annot: T, help_mode: bool) -> Span<'a>
+fn annotate_help<'a, T>(annot: T, help_mode: bool) -> Span<'a>
 where
     T: Into<String>,
 {
