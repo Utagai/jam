@@ -144,14 +144,15 @@ fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
 }
 
 fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
-    let fg_color_style = Style::default()
-        .fg(Color::DarkGray)
-        .add_modifier(Modifier::ITALIC);
     let help_text = Paragraph::new(Line::from(vec![
-        Span::raw("? - toggle help"),
+        Span::styled(
+            "? - toggle help",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ),
         annotate_help("Toggles this annotated view!", help_mode),
-    ]))
-    .style(fg_color_style);
+    ]));
     f.render_widget(help_text, region)
 }
 
@@ -279,8 +280,21 @@ fn draw_potential_help(f: &mut Frame, region: Rect, help_mode: bool) {
     f.render_widget(divider, region);
 }
 
+// NOTE: These tests are a bit of a mess. Part of it I'm 100% sure is my own
+// fault, but I do think a good deal of it is due to the nature of testing TUIs
+// and the way TestBackend works. I'm actually quite uncharacteristically sure
+// of this becauase this opinion is actually held by lots of people in or using
+// the ratatui project. I even had a maintainer/moderator from the ratatui
+// Discord mention it (and appreciate my idea of using & styling Line! Yay!).
+// Anyways, it's just really finicky and often you'll fail tests for a single
+// character having the wrong color, and often its a white space character so
+// who even cares? Anyways, just keep that in mind.
+// NOTE: Oh yea, and remember that we use a margin on the app which means you
+// gotta remember about extra spaces on basically every line we're asserting on.
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use ratatui::{
         backend::TestBackend,
         buffer::Buffer,
@@ -296,6 +310,20 @@ mod tests {
 
     fn blank_line<'a>() -> Line<'a> {
         Line::raw("                 ")
+    }
+
+    fn annotate_line<'a>(line: Line<'a>, help_text: &'a str) -> Line<'a> {
+        Line::from(
+            line.into_iter()
+                .chain(iter::once(Span::styled(
+                    format!("    ({help_text})"),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )))
+                .chain(iter::once(Span::styled(" ", Style::default())))
+                .collect::<Vec<Span>>(),
+        )
     }
 
     fn leaf_line<'a>(key: &'a str, target_name: &'a str) -> Line<'a> {
@@ -350,6 +378,68 @@ mod tests {
 
     fn waiting_animation_line<'a>(dots: usize) -> Line<'a> {
         Line::from(vec![Span::raw(format!(" {}", "•".repeat(dots)))])
+    }
+
+    fn help_text_title<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" Some "),
+            Span::styled(
+                "helpful ",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+            Span::raw("things ==="),
+        ])
+    }
+
+    fn help_text_period_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "'.'",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(
+                " to execute the current prefix, assuming it points to something executable.",
+            ),
+        ])
+    }
+
+    fn help_text_backspace_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "<backspace>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to undo a character you've pressed and go back up the tree."),
+        ])
+    }
+
+    fn help_text_exit_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "<Control-C>/<Esc>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to exit Jam :(."),
+        ])
+    }
+
+    fn help_text_readme_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • "),
+            Span::styled("READ ", Style::default().fg(Color::LightRed)),
+            Span::raw("the README.md (pls)!"),
+        ])
     }
 
     // The tests here have to have proper styling information, which sucks cause TestBackend/Buffer
@@ -608,6 +698,67 @@ mod tests {
             prefix_line("h-y-z"),
             toggle_help_line(),
             waiting_animation_line(1),
+            blank_line(),
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn help_mode_no_error() {
+        let backend = TestBackend::new(93, 14);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        key_target_pairs: &vec![
+                            NextKey::LeafKey {
+                                key: 'a',
+                                target_name: "build",
+                            },
+                            NextKey::BranchKey { key: 'b' },
+                        ],
+                        tick: 1,
+                        help_mode: true,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            annotate_line(
+                leaf_line("a", "build"),
+                "Hit 'a' to execute the 'build' target.",
+            ),
+            annotate_line(
+                branch_line("b"),
+                "Hit 'b' to continue the current prefix in the tree.",
+            ),
+            blank_line(),
+            annotate_line(
+                prefix_line("h-y-z"),
+                "This is the current prefix. You've pressed 'h, then y, then z' so far.",
+            ),
+            annotate_line(toggle_help_line(), "Toggles this annotated view!"),
+            annotate_line(waiting_animation_line(1), "Just a waiting animation."),
+            blank_line(),
+            help_text_title(),
+            help_text_period_tip(),
+            help_text_backspace_tip(),
+            help_text_exit_tip(),
+            help_text_readme_tip(),
             blank_line(),
         ]);
 
