@@ -132,14 +132,14 @@ fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) 
 
 fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
     let error_para = Paragraph::new(Line::from(vec![
-        Span::raw(errmsg.to_string()),
+        Span::styled(
+            errmsg.to_string(),
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::LightRed),
+        ),
         annotate_help("the last triggered error", help_mode),
-    ]))
-    .style(
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(Color::LightRed),
-    );
+    ]));
     f.render_widget(error_para, region)
 }
 
@@ -376,6 +376,18 @@ mod tests {
         ])
     }
 
+    fn error_line<'a>(errmsg: &'a str) -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                format!("{errmsg}"),
+                Style::default()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    }
+
     fn waiting_animation_line<'a>(dots: usize) -> Line<'a> {
         Line::from(vec![Span::raw(format!(" {}", "•".repeat(dots)))])
     }
@@ -442,11 +454,6 @@ mod tests {
         ])
     }
 
-    // The tests here have to have proper styling information, which sucks cause TestBackend/Buffer
-    // doesn't have any ergonomic APIs for specifying styling. There's probably some ways to make
-    // this easier but they're kind of hairy (e.g. designing a DSL for specifying styling, or using
-    // a macro to generate the expected buffer). For now, I'm just going to manually specify the
-    // styling information.
     #[test]
     fn single_target() {
         let backend = TestBackend::new(17, 7);
@@ -482,6 +489,48 @@ mod tests {
             blank_line(),
             prefix_line("h-y-z"),
             toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn has_error() {
+        let backend = TestBackend::new(17, 7);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(16),
+            },
+        )
+        .unwrap();
+
+        terminal
+            .draw(|f| {
+                ui(
+                    f,
+                    State {
+                        errmsg: "some error",
+                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        key_target_pairs: &vec![NextKey::LeafKey {
+                            key: 'a',
+                            target_name: "build",
+                        }],
+                        tick: 1,
+                        help_mode: false,
+                    },
+                )
+            })
+            .expect("failed to draw");
+
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            leaf_line("a", "build"),
+            blank_line(),
+            prefix_line("h-y-z"),
+            error_line("some error"),
             waiting_animation_line(1),
             blank_line(),
         ]);
