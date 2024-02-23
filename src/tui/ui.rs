@@ -133,7 +133,7 @@ fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) 
 fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
     let error_para = Paragraph::new(Line::from(vec![
         Span::raw(errmsg.to_string()),
-        annot(String::from("the last triggered error"), help_mode),
+        annot("the last triggered error", help_mode),
     ]))
     .style(
         Style::default()
@@ -149,7 +149,7 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
         .add_modifier(Modifier::ITALIC);
     let help_text = Paragraph::new(Line::from(vec![
         Span::raw("? - toggle help"),
-        annot(String::from("Toggles this annotated view!"), help_mode),
+        annot("Toggles this annotated view!", help_mode),
     ]))
     .style(fg_color_style);
     f.render_widget(help_text, region)
@@ -194,7 +194,7 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     let num_ellipses = tick % (max_num_ellipses + 1);
     let ellipses = Paragraph::new(Line::from(vec![
         Span::raw("•".repeat(num_ellipses as usize)),
-        annot(String::from("Just a waiting animation."), help_mode),
+        annot("Just a waiting animation.", help_mode),
     ]))
     .style(Style::default());
 
@@ -202,11 +202,13 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     f.render_widget(ellipses, status_bar_regions[1]);
 }
 
-// TODO: Make annot take a &str OR a String.
-fn annot<'a>(annot: String, help_mode: bool) -> Span<'a> {
+fn annot<'a, T>(annot: T, help_mode: bool) -> Span<'a>
+where
+    T: Into<String>,
+{
     let mut s = String::from("");
     if help_mode {
-        s = format!("    ({})", annot);
+        s = format!("    ({})", annot.into());
     }
 
     Span::styled(
