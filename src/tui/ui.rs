@@ -5,6 +5,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use std::iter;
 
 use crate::jam::{NextKey, Shortcut};
 
@@ -38,6 +39,8 @@ pub fn ui(f: &mut Frame, state: State) {
     // help section that includes any error messages and a mention of the help
     // key, and finally, a section for an animation indicating that we are
     // waiting on input.
+    // TODO: Maybe these should be methods of a State or other struct so we
+    // don't need to keep plumbing things.
     draw_keys(f, main_regions[0], state.key_target_pairs, state.help_mode);
     draw_current_prefix(f, main_regions[1], &state.prefix, state.help_mode);
     draw_diagnostics(f, main_regions[2], &state.errmsg, state.help_mode);
@@ -91,29 +94,24 @@ fn generate_line_for_key<'a>(
 
     // The target name or marker.
     if target_string == PREFIX_MARKER {
-        spans.append(&mut vec![
-            Span::styled(
-                format!("{target_string}"),
-                Style::default().fg(Color::DarkGray),
-            ),
-            annotate_help(
-                format!("Hit '{k}' to continue the current prefix in the tree."),
-                help_mode,
-            ),
-        ]);
+        spans.push(Span::styled(
+            format!("{target_string}"),
+            Style::default().fg(Color::DarkGray),
+        ));
     } else {
-        spans.append(&mut vec![
-            Span::styled(
-                format!("'{target_string}'"),
-                Style::default().fg(Color::LightGreen),
-            ),
-            annotate_help(
-                format!("Hit '{k}' to execute the '{target_string}' target."),
-                help_mode,
-            ),
-        ]);
+        spans.push(Span::styled(
+            format!("'{target_string}'"),
+            Style::default().fg(Color::LightGreen),
+        ));
     }
-    Line::from(spans)
+
+    // Help annotation message.
+    let msg = if target_string == PREFIX_MARKER {
+        format!("Hit '{k}' to continue the current prefix in the tree.")
+    } else {
+        format!("Hit '{k}' to execute the '{target_string}' target.")
+    };
+    annotate_help(Line::from(spans), help_mode, msg)
 }
 
 // This is really just writing the help toggle hint message and the line for containing any error message.
@@ -131,46 +129,46 @@ fn draw_diagnostics(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) 
 }
 
 fn draw_error(f: &mut Frame, region: Rect, errmsg: &str, help_mode: bool) {
-    let error_para = Paragraph::new(Line::from(vec![
-        Span::styled(
+    let error_line = annotate_help(
+        Line::from(vec![Span::styled(
             errmsg.to_string(),
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::LightRed),
-        ),
-        annotate_help("The last triggered error.", help_mode),
-    ]));
-    f.render_widget(error_para, region)
+        )]),
+        help_mode,
+        "The last triggered error.",
+    );
+    f.render_widget(Paragraph::new(error_line), region)
 }
 
 fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
-    let help_text = Paragraph::new(Line::from(vec![
-        Span::styled(
+    let help_line = annotate_help(
+        Line::from(Span::styled(
             "? - toggle help",
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
-        ),
-        annotate_help("Toggles this annotated view!", help_mode),
-    ]));
-    f.render_widget(help_text, region)
+        )),
+        help_mode,
+        "Toggles this annotated view!",
+    );
+    f.render_widget(Paragraph::new(help_line), region)
 }
 
 fn draw_current_prefix(f: &mut Frame, region: Rect, prefix: &Shortcut, help_mode: bool) {
     let prefix_descr = prefix.to_string().replace("-", ", then ");
-    let prefix_para = Paragraph::new(Line::from(vec![
-        Span::styled(
+    let prefix_line = annotate_help(
+        Line::from(vec![Span::styled(
             format!("prefix: '{prefix}'"),
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
-        ),
-        annotate_help(
-            format!("This is the current prefix. You've pressed '{prefix_descr}' so far.",),
-            help_mode,
-        ),
-    ]));
-    f.render_widget(prefix_para, region)
+        )]),
+        help_mode,
+        &format!("This is the current prefix. You've pressed '{prefix_descr}' so far."),
+    );
+    f.render_widget(prefix_line, region)
 }
 
 fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
@@ -194,30 +192,36 @@ fn draw_waiting_anim(f: &mut Frame, region: Rect, tick: u64, help_mode: bool) {
     // NOTE: Since we want 3 max bullets, and we're using %, we need
     // to do % (N+1).
     let num_ellipses = tick % (max_num_ellipses + 1);
-    let ellipses = Paragraph::new(Line::from(vec![
-        Span::raw("•".repeat(num_ellipses as usize)),
-        annotate_help("Just a waiting animation.", help_mode),
-    ]))
-    .style(Style::default());
 
     // Draw the three sections of the status bar:
-    f.render_widget(ellipses, status_bar_regions[1]);
+    f.render_widget(
+        annotate_help(
+            Line::raw("•".repeat(num_ellipses as usize)),
+            help_mode,
+            "Just a waiting animation.",
+        ),
+        status_bar_regions[1],
+    );
 }
 
-fn annotate_help<'a, T>(annot: T, help_mode: bool) -> Span<'a>
+fn annotate_help<'a, T>(line: Line<'a>, help_mode: bool, help_text: T) -> Line<'a>
 where
     T: Into<String>,
 {
-    let mut s = String::from("");
-    if help_mode {
-        s = format!("    ({})", annot.into());
+    if !help_mode {
+        return line;
     }
 
-    Span::styled(
-        s,
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::ITALIC),
+    Line::from(
+        line.into_iter()
+            .chain(iter::once(Span::styled(
+                format!("    ({})", help_text.into()),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )))
+            .chain(iter::once(Span::styled(" ", Style::default())))
+            .collect::<Vec<Span>>(),
     )
 }
 
@@ -312,7 +316,7 @@ mod tests {
         Line::raw("                 ")
     }
 
-    fn annotate_line<'a>(line: Line<'a>, help_text: &'a str) -> Line<'a> {
+    fn annotate_help_test<'a>(line: Line<'a>, help_text: &'a str) -> Line<'a> {
         Line::from(
             line.into_iter()
                 .chain(iter::once(Span::styled(
@@ -789,25 +793,25 @@ mod tests {
 
             let expected = Buffer::with_lines(vec![
                 blank_line(),
-                annotate_line(
+                annotate_help_test(
                     leaf_line("a", "build"),
                     "Hit 'a' to execute the 'build' target.",
                 ),
-                annotate_line(
+                annotate_help_test(
                     branch_line("b"),
                     "Hit 'b' to continue the current prefix in the tree.",
                 ),
                 blank_line(),
-                annotate_line(
+                annotate_help_test(
                     prefix_line("h-y-z"),
                     "This is the current prefix. You've pressed 'h, then y, then z' so far.",
                 ),
                 if errmsg.is_empty() {
-                    annotate_line(toggle_help_line(), "Toggles this annotated view!")
+                    annotate_help_test(toggle_help_line(), "Toggles this annotated view!")
                 } else {
-                    annotate_line(error_line(errmsg), "The last triggered error.")
+                    annotate_help_test(error_line(errmsg), "The last triggered error.")
                 },
-                annotate_line(waiting_animation_line(1), "Just a waiting animation."),
+                annotate_help_test(waiting_animation_line(1), "Just a waiting animation."),
                 blank_line(),
                 help_text_title(),
                 help_text_period_tip(),
