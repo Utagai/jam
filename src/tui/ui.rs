@@ -769,7 +769,6 @@ mod tests {
         .unwrap();
 
         for errmsg in &["", "some error"] {
-            // Your code here
             terminal
                 .draw(|f| {
                     ui(
