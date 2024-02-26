@@ -10,12 +10,16 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
+    widgets::ScrollbarState,
     Terminal, TerminalOptions,
 };
 use slog::{debug, info, Logger};
 
-use super::ui::{ui, State};
+use super::ui::{ui, UIState};
 use crate::jam::{Jam, Lookup, NextKey, Shortcut};
+
+pub(super) const VIEWPORT_BASE_HEIGHT: u16 = 11;
+pub(super) const SCROLLABLE_REGION_MAX_HEIGHT: usize = 15;
 
 struct App<'a> {
     jam: &'a Jam<'a>,
@@ -23,6 +27,8 @@ struct App<'a> {
     next: Vec<NextKey<'a>>,
     errmsg: String,
     logger: Logger,
+    scroll_offset: usize,
+    scroll_state: ScrollbarState,
     help_mode: bool,
 }
 
@@ -32,12 +38,17 @@ impl<'a> App<'a> {
         let next_keys = jam
             .next(&initial_prefix, false)
             .expect("failed to get next keys on initialization");
+        let content_len =
+            (next_keys.len().saturating_sub(SCROLLABLE_REGION_MAX_HEIGHT)).min(next_keys.len());
+        eprintln!("content_len: {}", content_len);
         App {
             jam,
             prefix: initial_prefix,
             next: next_keys,
             errmsg: String::from(""),
             logger,
+            scroll_offset: 0,
+            scroll_state: ScrollbarState::default().content_length(content_len),
             help_mode: false,
         }
     }
@@ -94,12 +105,14 @@ fn run_app<B: Backend>(
     let mut last_tick = Instant::now();
     let mut tick = 0;
     loop {
-        let state = State {
+        let state = UIState {
             key_target_pairs: &app.next,
             errmsg: &app.errmsg,
             prefix: &app.prefix,
             tick,
             help_mode: app.help_mode,
+            scroll_offset: app.scroll_offset,
+            scrollbar_state: app.scroll_state,
         };
         // Does the actual drawing of the UI!
         // Note that we make a _call_ to ui() here, we are re-creating
@@ -161,6 +174,20 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 unreachable!("reconciliation failure is not possible on shortcut termination")
             }
         },
+        KeyCode::Tab => {
+            app.scroll_offset = app
+                .scroll_offset
+                .saturating_add(1)
+                .min(app.next.len() - SCROLLABLE_REGION_MAX_HEIGHT);
+            eprintln!("scroll_offset: {}", app.scroll_offset);
+            app.scroll_state = app.scroll_state.position(app.scroll_offset);
+            Ok(Response::Request)
+        }
+        KeyCode::BackTab => {
+            app.scroll_offset = app.scroll_offset.saturating_sub(1).max(0);
+            app.scroll_state = app.scroll_state.position(app.scroll_offset);
+            Ok(Response::Request)
+        }
         KeyCode::Backspace => {
             app.reverse();
             Ok(Response::Request)
@@ -202,6 +229,10 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
 }
 
 pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
+    // Create new 'app'. Really, this is just a bag of state to carry across 'ticks'.
+    // Each tick is basically an entire refresh of the UI (see above 'tick_rate').
+    let app = App::new(logger, jam);
+
     // Bookkeeping stuff (setup):
     enable_raw_mode()?;
     let stdout = io::stdout();
@@ -209,15 +240,13 @@ pub fn render<'a>(logger: Logger, jam: &'a Jam<'a>) -> Result<Shortcut> {
     let mut terminal = Terminal::with_options(
         backend,
         TerminalOptions {
-            viewport: ratatui::Viewport::Inline(16),
+            viewport: ratatui::Viewport::Inline(
+                VIEWPORT_BASE_HEIGHT + app.next.len().min(SCROLLABLE_REGION_MAX_HEIGHT) as u16,
+            ),
         },
     )?;
 
-    // create app and run it
     let tick_rate = Duration::from_millis(500);
-    // Create new 'app'. Really, this is just a bag of state to carry across 'ticks'.
-    // Each tick is basically an entire refresh of the UI (see above 'tick_rate').
-    let app = App::new(logger, jam);
     // Run app runs the tick loop that constantly refreshes the loop based on tick_rate.
     // It relies on the ui() function to recreate the UI. The UI takes app to help it decide what to draw.
     let res = run_app(&mut terminal, app, tick_rate)?;

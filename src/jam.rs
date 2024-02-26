@@ -149,7 +149,6 @@ pub enum ExecError {
         shortcut: Shortcut,
         conflict_msg: String,
     },
-    // TODO: Probably rename this to ShortcutNotFound for consistency.
     #[error("no command for given shortcut '{shortcut}'")]
     ShortcutNotFound { shortcut: Shortcut },
     #[error("no command for given target name '{target_name}'")]

@@ -2,14 +2,16 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Scrollbar, ScrollbarState},
     Frame,
 };
 use std::iter;
 
 use crate::jam::{NextKey, Shortcut};
 
-pub(super) struct State<'a> {
+use super::core::SCROLLABLE_REGION_MAX_HEIGHT;
+
+pub(super) struct UIState<'a> {
     // key_target_pairs is a list of (key, targets) pairs.
     // They are eventually rendered as e.g.:
     //  a -> 'build'
@@ -18,16 +20,21 @@ pub(super) struct State<'a> {
     pub(super) prefix: &'a Shortcut,
     pub(super) tick: u64,
     pub(super) help_mode: bool,
+    pub(super) scroll_offset: usize,
+    pub(super) scrollbar_state: ScrollbarState,
 }
 
-pub fn ui(f: &mut Frame, state: State) {
+pub fn ui(f: &mut Frame, mut state: UIState) {
     let term_region = f.size();
 
     let main_regions = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
-            Constraint::Length(state.key_target_pairs.len() as u16 + 1), // 'Keys' window.
+            Constraint::Length(
+                (state.key_target_pairs.len() as u16).min(SCROLLABLE_REGION_MAX_HEIGHT as u16),
+            ), // 'Keys' window.
+            Constraint::Length(1), // Empty line for visual separation..
             Constraint::Length(1), // Current prefix indicator.
             Constraint::Max(2),    // Error section.
             Constraint::Length(1), // Ellipses
@@ -39,23 +46,33 @@ pub fn ui(f: &mut Frame, state: State) {
     // help section that includes any error messages and a mention of the help
     // key, and finally, a section for an animation indicating that we are
     // waiting on input.
-    // TODO: Maybe these should be methods of a State or other struct so we
-    // don't need to keep plumbing things.
-    draw_keys(f, main_regions[0], &state);
-    draw_current_prefix(f, main_regions[1], &state);
-    draw_diagnostics(f, main_regions[2], &state);
-    draw_waiting_anim(f, main_regions[3], &state);
-    draw_potential_help(f, main_regions[4], &state);
+    draw_keys(f, main_regions[0], &mut state);
+    draw_current_prefix(f, main_regions[2], &state);
+    draw_diagnostics(f, main_regions[3], &state);
+    draw_waiting_anim(f, main_regions[4], &state);
+    draw_potential_help(f, main_regions[5], &state);
 }
 
-fn draw_keys(f: &mut Frame, region: Rect, state: &State) {
-    let keys_para = Paragraph::new(key_text(state)).alignment(Alignment::Left);
-    f.render_widget(keys_para, region)
+fn draw_keys(f: &mut Frame, region: Rect, state: &mut UIState) {
+    let keys_para = Paragraph::new(key_text(state))
+        .alignment(Alignment::Left)
+        .scroll((state.scroll_offset as u16, 0));
+    f.render_widget(keys_para, region);
+    f.render_stateful_widget(
+        Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalLeft)
+            .thumb_style(Color::DarkGray)
+            .track_style(Color::DarkGray)
+            .thumb_symbol("=")
+            .begin_symbol(None)
+            .end_symbol(None),
+        region,
+        &mut state.scrollbar_state,
+    )
 }
 
 static PREFIX_MARKER: &str = "...";
 
-fn key_text<'a>(state: &'a State) -> Vec<Line<'a>> {
+fn key_text<'a>(state: &'a UIState) -> Vec<Line<'a>> {
     let text_to_render: Vec<(&char, &str, &str)> = state
         .key_target_pairs
         .iter()
@@ -65,6 +82,7 @@ fn key_text<'a>(state: &'a State) -> Vec<Line<'a>> {
         })
         .collect();
 
+    eprintln!("text_to_render: {:?}", text_to_render.len());
     // Text to show in paragraph.
     let key_lines = text_to_render
         .iter()
@@ -115,7 +133,7 @@ fn generate_line_for_key<'a>(
 }
 
 // This is really just writing the help toggle hint message and the line for containing any error message.
-fn draw_diagnostics(f: &mut Frame, region: Rect, state: &State) {
+fn draw_diagnostics(f: &mut Frame, region: Rect, state: &UIState) {
     if state.errmsg.is_empty() {
         draw_help_text(f, region, state.help_mode);
     } else {
@@ -156,7 +174,7 @@ fn draw_help_text(f: &mut Frame, region: Rect, help_mode: bool) {
     f.render_widget(Paragraph::new(help_line), region)
 }
 
-fn draw_current_prefix(f: &mut Frame, region: Rect, state: &State) {
+fn draw_current_prefix(f: &mut Frame, region: Rect, state: &UIState) {
     let prefix_descr = state.prefix.to_string().replace("-", ", then ");
     let prefix_line = annotate_help(
         Line::from(Span::styled(
@@ -171,7 +189,7 @@ fn draw_current_prefix(f: &mut Frame, region: Rect, state: &State) {
     f.render_widget(prefix_line, region)
 }
 
-fn draw_waiting_anim(f: &mut Frame, region: Rect, state: &State) {
+fn draw_waiting_anim(f: &mut Frame, region: Rect, state: &UIState) {
     let max_num_ellipses: u64 = 3;
     // Divide the given region into the 3 sections of the status bar.
     let status_bar_regions = Layout::default()
@@ -225,7 +243,7 @@ where
     )
 }
 
-fn draw_potential_help(f: &mut Frame, region: Rect, state: &State) {
+fn draw_potential_help(f: &mut Frame, region: Rect, state: &UIState) {
     if !state.help_mode {
         return;
     }
@@ -255,6 +273,7 @@ fn draw_potential_help(f: &mut Frame, region: Rect, state: &State) {
                 " to execute the current prefix, assuming it points to something executable.",
             ),
         ]),
+        // TODO: Add info about TAB/S-TAB scrolling.
         Line::from(vec![
             Span::raw("• Press "),
             Span::styled(
@@ -304,12 +323,13 @@ mod tests {
         buffer::Buffer,
         style::{Color, Modifier, Style},
         text::{Line, Span},
+        widgets::ScrollbarState,
         Terminal, TerminalOptions,
     };
 
     use crate::{
         jam::NextKey,
-        tui::ui::{ui, State},
+        tui::ui::{ui, UIState},
     };
 
     fn blank_line<'a>() -> Line<'a> {
@@ -473,7 +493,7 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![NextKey::LeafKey {
@@ -482,6 +502,8 @@ mod tests {
                         }],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -515,7 +537,7 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "some error",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![NextKey::LeafKey {
@@ -524,6 +546,8 @@ mod tests {
                         }],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -557,7 +581,7 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
@@ -572,6 +596,8 @@ mod tests {
                         ],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -607,12 +633,14 @@ mod tests {
                 .draw(|f| {
                     ui(
                         f,
-                        State {
+                        UIState {
                             errmsg: "",
                             prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![],
                             tick: i as u64,
                             help_mode: false,
+                            scroll_offset: 0,
+                            scrollbar_state: ScrollbarState::default(),
                         },
                     )
                 })
@@ -645,12 +673,14 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec![]),
                         key_target_pairs: &vec![],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -683,7 +713,7 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
@@ -692,6 +722,8 @@ mod tests {
                         ],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -726,7 +758,7 @@ mod tests {
             .draw(|f| {
                 ui(
                     f,
-                    State {
+                    UIState {
                         errmsg: "",
                         prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
@@ -738,6 +770,8 @@ mod tests {
                         ],
                         tick: 1,
                         help_mode: false,
+                        scroll_offset: 0,
+                        scrollbar_state: ScrollbarState::default(),
                     },
                 )
             })
@@ -773,7 +807,7 @@ mod tests {
                 .draw(|f| {
                     ui(
                         f,
-                        State {
+                        UIState {
                             errmsg,
                             prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![
@@ -785,6 +819,8 @@ mod tests {
                             ],
                             tick: 1,
                             help_mode: true,
+                            scroll_offset: 0,
+                            scrollbar_state: ScrollbarState::default(),
                         },
                     )
                 })
