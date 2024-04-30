@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Scrollbar, ScrollbarState},
@@ -60,7 +60,15 @@ fn draw_keys(f: &mut Frame, region: Rect, state: &mut UIState) {
     let keys_para = Paragraph::new(key_text(state))
         .alignment(Alignment::Left)
         .scroll((state.scroll_offset as u16, 0));
-    f.render_widget(keys_para, region);
+    f.render_widget(
+        keys_para,
+        // Apply a margin so that the scrollbar does not overwrite the text of
+        // the keys.
+        region.inner(&Margin {
+            vertical: 0,
+            horizontal: 2,
+        }),
+    );
     f.render_stateful_widget(
         Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalLeft)
             .thumb_style(Color::DarkGray)
@@ -85,7 +93,6 @@ fn key_text<'a>(state: &'a UIState) -> Vec<Line<'a>> {
         })
         .collect();
 
-    eprintln!("text_to_render: {:?}", text_to_render.len());
     // Text to show in paragraph.
     let key_lines = text_to_render
         .iter()
@@ -359,7 +366,11 @@ mod tests {
 
     fn leaf_line<'a>(key: &'a str, target_name: &'a str) -> Line<'a> {
         Line::from(vec![
-            Span::raw(" "),
+            // NOTE: We put in 3 spaces cause we have one space that's
+            // explicitly in the string we are rendering, and then 2 more from
+            // the margin we apply to the keys to avoid them getting overwritten
+            // by the scrollbar.
+            Span::raw("   "),
             Span::styled(
                 format!("{key}"),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -374,7 +385,11 @@ mod tests {
 
     fn branch_line<'a>(key: &'a str) -> Line<'a> {
         Line::from(vec![
-            Span::raw(" "),
+            // NOTE: We put in 3 spaces cause we have one space that's
+            // explicitly in the string we are rendering, and then 2 more from
+            // the margin we apply to the keys to avoid them getting overwritten
+            // by the scrollbar.
+            Span::raw("   "),
             Span::styled(
                 format!("{key}"),
                 Style::default().add_modifier(Modifier::BOLD),
