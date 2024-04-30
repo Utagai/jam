@@ -276,7 +276,6 @@ fn draw_potential_help(f: &mut Frame, region: Rect, state: &UIState) {
                 " to execute the current prefix, assuming it points to something executable.",
             ),
         ]),
-        // TODO: Add info about TAB/S-TAB scrolling.
         Line::from(vec![
             Span::raw("• Press "),
             Span::styled(
@@ -290,17 +289,22 @@ fn draw_potential_help(f: &mut Frame, region: Rect, state: &UIState) {
         Line::from(vec![
             Span::raw("• Press "),
             Span::styled(
+                "<TAB>/<S-TAB>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to scroll up/down."),
+        ]),
+        Line::from(vec![
+            Span::raw("• Press "),
+            Span::styled(
                 "<Control-C>/<Esc>",
                 Style::default()
                     .fg(Color::LightMagenta)
                     .bg(Color::Rgb(33, 33, 33)),
             ),
             Span::raw(" to exit Jam :(."),
-        ]),
-        Line::from(vec![
-            Span::raw("• "),
-            Span::styled("READ ", Style::default().fg(Color::LightRed)),
-            Span::raw("the README.md (pls)!"),
         ]),
     ]);
     f.render_widget(divider, region);
@@ -460,6 +464,19 @@ mod tests {
         ])
     }
 
+    fn scroll_tip<'a>() -> Line<'a> {
+        Line::from(vec![
+            Span::raw(" • Press "),
+            Span::styled(
+                "<TAB>/<S-TAB>",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .bg(Color::Rgb(33, 33, 33)),
+            ),
+            Span::raw(" to scroll up/down."),
+        ])
+    }
+
     fn help_text_exit_tip<'a>() -> Line<'a> {
         Line::from(vec![
             Span::raw(" • Press "),
@@ -470,14 +487,6 @@ mod tests {
                     .bg(Color::Rgb(33, 33, 33)),
             ),
             Span::raw(" to exit Jam :(."),
-        ])
-    }
-
-    fn help_text_readme_tip<'a>() -> Line<'a> {
-        Line::from(vec![
-            Span::raw(" • "),
-            Span::styled("READ ", Style::default().fg(Color::LightRed)),
-            Span::raw("the README.md (pls)!"),
         ])
     }
 
@@ -854,8 +863,8 @@ mod tests {
                 help_text_title(),
                 help_text_period_tip(),
                 help_text_backspace_tip(),
+                scroll_tip(),
                 help_text_exit_tip(),
-                help_text_readme_tip(),
                 blank_line(),
             ]);
 
