@@ -78,7 +78,7 @@ fn draw_keys(f: &mut Frame, region: Rect, state: &mut UIState) {
             .end_symbol(None),
         region,
         &mut state.scrollbar_state,
-    )
+    );
 }
 
 static PREFIX_MARKER: &str = "...";
@@ -364,13 +364,23 @@ mod tests {
         )
     }
 
-    fn leaf_line<'a>(key: &'a str, target_name: &'a str) -> Line<'a> {
+    fn leaf_line<'a>(key: &'a str, target_name: &'a str, scroll: Option<char>) -> Line<'a> {
+        let scroll_char = scroll.unwrap_or(' ');
         Line::from(vec![
             // NOTE: We put in 3 spaces cause we have one space that's
             // explicitly in the string we are rendering, and then 2 more from
             // the margin we apply to the keys to avoid them getting overwritten
             // by the scrollbar.
-            Span::raw("   "),
+            Span::raw(" "),
+            Span::styled(
+                format!("{scroll_char}"),
+                Style::default().fg(if scroll.is_some() {
+                    Color::DarkGray
+                } else {
+                    Color::Reset
+                }),
+            ),
+            Span::raw(" "),
             Span::styled(
                 format!("{key}"),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -538,7 +548,7 @@ mod tests {
 
         let expected = Buffer::with_lines(vec![
             blank_line(),
-            leaf_line("a", "build"),
+            leaf_line("a", "build", None),
             blank_line(),
             prefix_line("h-y-z"),
             toggle_help_line(),
@@ -582,7 +592,7 @@ mod tests {
 
         let expected = Buffer::with_lines(vec![
             blank_line(),
-            leaf_line("a", "build"),
+            leaf_line("a", "build", None),
             blank_line(),
             prefix_line("h-y-z"),
             error_line("some error"),
@@ -632,8 +642,8 @@ mod tests {
 
         let expected = Buffer::with_lines(vec![
             blank_line(),
-            leaf_line("a", "build"),
-            leaf_line("b", "run"),
+            leaf_line("a", "build", None),
+            leaf_line("b", "run", None),
             blank_line(),
             prefix_line("h-y-z"),
             toggle_help_line(),
@@ -806,7 +816,7 @@ mod tests {
 
         let expected = Buffer::with_lines(vec![
             blank_line(),
-            leaf_line("a", "build"),
+            leaf_line("a", "build", None),
             branch_line("b"),
             blank_line(),
             prefix_line("h-y-z"),
@@ -856,7 +866,7 @@ mod tests {
             let expected = Buffer::with_lines(vec![
                 blank_line(),
                 annotate_help_test(
-                    leaf_line("a", "build"),
+                    leaf_line("a", "build", None),
                     "Hit 'a' to execute the 'build' target.",
                 ),
                 annotate_help_test(
@@ -885,5 +895,79 @@ mod tests {
 
             terminal.backend().assert_buffer(&expected);
         }
+    }
+
+    #[test]
+    fn many_targets_renders_scrollbar() {
+        let backend = TestBackend::new(17, 21);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(21),
+            },
+        )
+        .unwrap();
+
+        let keys: Vec<NextKey> = (b'a'..=b'z')
+            .map(|key| NextKey::LeafKey {
+                key: key as char,
+                target_name: "name",
+            })
+            .collect();
+
+        let s = UIState {
+            errmsg: "",
+            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+            key_target_pairs: &keys,
+            tick: 1,
+            help_mode: false,
+            scroll_offset: 3,
+            scrollbar_state: ScrollbarState::default().content_length(3),
+        };
+
+        terminal.draw(|f| ui(f, s)).expect("failed to draw");
+
+        let expected = Buffer::with_lines(vec![
+            blank_line(),
+            // NOTE: The following lines are intentionally commented out. We set
+            // the scroll_offset to 3 above, so these first 3 lines should not
+            // be rendered.
+            // leaf_line("a", "name", None),
+            // leaf_line("b", "name", None),
+            // leaf_line("c", "name", None),
+            leaf_line("d", "name", Some('=')),
+            leaf_line("e", "name", Some('=')),
+            leaf_line("f", "name", Some('=')),
+            leaf_line("g", "name", Some('=')),
+            leaf_line("h", "name", Some('=')),
+            leaf_line("i", "name", Some('=')),
+            leaf_line("j", "name", Some('=')),
+            leaf_line("k", "name", Some('=')),
+            leaf_line("l", "name", Some('=')),
+            leaf_line("m", "name", Some('=')),
+            leaf_line("n", "name", Some('=')),
+            leaf_line("o", "name", Some('=')),
+            leaf_line("p", "name", Some('=')),
+            leaf_line("q", "name", Some('║')),
+            leaf_line("r", "name", Some('║')),
+            // NOTE: The following lines are also intentionally commented out.
+            // The scroll bar view window is 15, so after "r", nothing else
+            // should be rendered (AKA, 15 letters).
+            // leaf_line("s", "name", None),
+            // leaf_line("t", "name", None),
+            // leaf_line("u", "name", None),
+            // leaf_line("v", "name", None),
+            // leaf_line("w", "name", None),
+            // leaf_line("x", "name", None),
+            // leaf_line("y", "name", None),
+            // leaf_line("z", "name", None),
+            blank_line(),
+            prefix_line("h-y-z"),
+            toggle_help_line(),
+            waiting_animation_line(1),
+            blank_line(),
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
     }
 }

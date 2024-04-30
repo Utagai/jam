@@ -50,7 +50,6 @@ impl<'a> App<'a> {
             .expect("failed to get next keys on initialization");
         let content_len =
             (next_keys.len().saturating_sub(SCROLLABLE_REGION_MAX_HEIGHT)).min(next_keys.len());
-        eprintln!("content_len: {}", content_len);
         App {
             jam,
             prefix: initial_prefix,
