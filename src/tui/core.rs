@@ -18,7 +18,17 @@ use slog::{debug, info, Logger};
 use super::ui::{ui, UIState};
 use crate::jam::{Jam, Lookup, NextKey, Shortcut};
 
-pub(super) const VIEWPORT_BASE_HEIGHT: u16 = 11;
+pub(crate) const VISUAL_SEP_EMPTY_LINE_HEIGHT: u16 = 1;
+pub(crate) const CURRENT_PREFIX_INDICATOR_HEIGHT: u16 = 1;
+pub(crate) const ERROR_SECTION_HEIGHT: u16 = 2;
+pub(crate) const ELLIPSES_HEIGHT: u16 = 1;
+pub(crate) const POTENTIAL_HELP_REGION_HEIGHT: u16 = 6;
+pub(crate) const VIEWPORT_BASE_HEIGHT: u16 = VISUAL_SEP_EMPTY_LINE_HEIGHT
+    + CURRENT_PREFIX_INDICATOR_HEIGHT
+    + ERROR_SECTION_HEIGHT
+    + ELLIPSES_HEIGHT
+    + POTENTIAL_HELP_REGION_HEIGHT
+    + 1;
 pub(super) const SCROLLABLE_REGION_MAX_HEIGHT: usize = 15;
 
 struct App<'a> {

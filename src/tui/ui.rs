@@ -9,7 +9,10 @@ use std::iter;
 
 use crate::jam::{NextKey, Shortcut};
 
-use super::core::SCROLLABLE_REGION_MAX_HEIGHT;
+use super::core::{
+    CURRENT_PREFIX_INDICATOR_HEIGHT, ELLIPSES_HEIGHT, ERROR_SECTION_HEIGHT,
+    POTENTIAL_HELP_REGION_HEIGHT, SCROLLABLE_REGION_MAX_HEIGHT, VISUAL_SEP_EMPTY_LINE_HEIGHT,
+};
 
 pub(super) struct UIState<'a> {
     // key_target_pairs is a list of (key, targets) pairs.
@@ -34,11 +37,11 @@ pub fn ui(f: &mut Frame, mut state: UIState) {
             Constraint::Length(
                 (state.key_target_pairs.len() as u16).min(SCROLLABLE_REGION_MAX_HEIGHT as u16),
             ), // 'Keys' window.
-            Constraint::Length(1), // Empty line for visual separation..
-            Constraint::Length(1), // Current prefix indicator.
-            Constraint::Max(2),    // Error section.
-            Constraint::Length(1), // Ellipses
-            Constraint::Max(6),    // Potential help region.
+            Constraint::Length(VISUAL_SEP_EMPTY_LINE_HEIGHT),
+            Constraint::Length(CURRENT_PREFIX_INDICATOR_HEIGHT),
+            Constraint::Max(ERROR_SECTION_HEIGHT),
+            Constraint::Length(ELLIPSES_HEIGHT),
+            Constraint::Max(POTENTIAL_HELP_REGION_HEIGHT),
         ])
         .split(term_region);
 
