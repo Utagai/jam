@@ -1,0 +1,16 @@
+---
+options:
+  reconciliation_strategy: firstnonmatch
+  log_level: disabled
+targets:
+  - name: "build"
+    cmd: "gum spin --spinner pulse --title 'Building total package...' -- sleep 1"
+    targets:
+      - name: "dep foo"
+        cmd: "gum spin --spinner pulse --title 'Building child component foo...' -- sleep 1"
+      - name: "dep bar"
+        cmd: "gum spin --spinner pulse --title 'Building child component bar...' -- sleep 1"
+  - name: "run"
+    cmd: "echo 'Yay, I just ran the command @ r!'"
+  - name: "my cool command"
+    cmd: "gum spin --spinner pulse --title 'Installing package...' -- sleep 1"
