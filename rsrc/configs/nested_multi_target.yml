@@ -1,0 +1,20 @@
+---
+options:
+  reconciliation_strategy: firstnonmatch
+  log_level: disabled
+targets:
+  - name: "alpha"
+    cmd: "echo 'foo'"
+    targets:
+      - name: "qux"
+        cmd: "echo 'bam'"
+        targets:
+          - name: "a"
+            help: "runs the a command"
+            cmd: "echo 'hi'"
+          - name: "b"
+            help: "runs the b command"
+            cmd: "echo 'hi'"
+          - name: "c"
+            help: "runs the c command"
+            cmd: "echo 'hi'"

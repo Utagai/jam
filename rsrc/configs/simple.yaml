@@ -3,7 +3,7 @@ options:
   reconciliation_strategy: firstnonmatch
   log_level: disabled
 imports:
-  - script: "cat ./rsrc/fake_import_output.json"
+  - script: "cat ./rsrc/configs/fake_import_output.json"
 targets:
   - name: "foo"
     cmd: "echo 'foo'"
