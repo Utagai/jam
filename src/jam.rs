@@ -371,21 +371,19 @@ impl<'a> Jam<'a> {
         let subtrie = self.shortcuts.get_node(prefix.iter());
         if let Some(subtrie) = subtrie {
             let mut keys_to_names: Vec<NextKey> = subtrie
-                .keys()
-                .filter_map(|suffix| {
-                    // .get(0) since we are only interested in the next key.
-                    suffix.get(0).map(|key| {
-                        // For this key, get the target names that that it leads to.
-                        let names = self
-                            .shortcuts
-                            .get_node(prefix.append(key).iter())
-                            .expect("failed to look up non-conflict shortcut")
-                            .values()
-                            .flatten()
-                            .map(|v| self.dag[*v].name)
-                            .collect();
-                        NextKey::new(**key, names)
-                    })
+                .children_with_keys()
+                .iter()
+                .filter_map(|(key, _)| {
+                    // For this key, get the target names that that it leads to.
+                    let names = self
+                        .shortcuts
+                        .get_node(prefix.append(*key).iter())
+                        .expect("failed to look up non-conflict shortcut")
+                        .values()
+                        .flatten()
+                        .map(|v| self.dag[*v].name)
+                        .collect();
+                    Some(NextKey::new(**key, names))
                 })
                 .collect();
             // Because the keys we return are individual _characters_ of
