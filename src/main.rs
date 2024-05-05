@@ -74,7 +74,6 @@ fn get_nearest_config_file(current_dir: &std::path::Path) -> anyhow::Result<Stri
         for file_name in possible_file_names.iter() {
             let config_path = path.join(file_name);
             if config_path.exists() {
-                eprintln!("Found config file: {}", config_path.to_str().unwrap());
                 return Ok(config_path.to_str().unwrap().to_string());
             }
         }
@@ -135,4 +134,61 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nearest_config_file_current_directory() {
+        // Create a temporary directory to isolate our tests.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let current_dir = temp_dir.path();
+
+        // Test when a config file exists in the current directory
+        let config_file = current_dir.join("jam.yaml");
+        std::fs::write(&config_file, "").unwrap();
+        assert_eq!(
+            get_nearest_config_file(&current_dir).unwrap(),
+            config_file.to_str().unwrap()
+        );
+
+        // Delete the temporary directory
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn nearest_config_file_parent_directory() {
+        // Create a temporary directory to isolate our tests.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let current_dir = temp_dir.path().join("test_dir");
+        std::fs::create_dir(&current_dir).unwrap();
+
+        // Test when a config file exists in a parent directory
+        let parent_dir = current_dir.parent().unwrap().to_path_buf();
+        let config_file = parent_dir.join("jam.yml");
+        eprintln!("created config file: {:?}", config_file);
+        std::fs::write(&config_file, "").unwrap();
+        assert_eq!(
+            get_nearest_config_file(&current_dir).unwrap(),
+            config_file.to_str().unwrap()
+        );
+
+        // Delete the temporary directory
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn nearest_config_file_no_file() {
+        // Create a temporary directory to isolate our tests.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let current_dir = temp_dir.path();
+
+        // Test when no config file exists
+        assert!(get_nearest_config_file(&current_dir).is_err());
+
+        // Delete the temporary directory
+        temp_dir.close().unwrap();
+    }
 }

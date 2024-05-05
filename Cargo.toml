@@ -18,6 +18,7 @@ slog = "2.7.0"
 slog-term = "2.9.0"
 strum = "0.24.1"
 strum_macros = "0.24.3"
+tempfile = "3.10.1"
 thiserror = "1.0.38"
 
 [dev-dependencies]
