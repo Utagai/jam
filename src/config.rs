@@ -121,7 +121,7 @@ impl Config {
     pub fn desugar(self) -> DesugaredConfig {
         let imported_targets = self
             .imports
-            .unwrap()
+            .unwrap_or(vec![])
             .iter()
             .flat_map(|import| {
                 let output = execute_with_output(&import.script);
@@ -391,6 +391,29 @@ mod tests {
                 dstarget::dep("foo-deep", "f-d", vec!["foo-deep-deeper"]),
                 dstarget::dep("foo-deep-deeper", "f-d-d", vec!["foo-deep-deeper-deepest"]),
                 dstarget::lone("foo-deep-deeper-deepest", "f-d-d-d"),
+            ]),
+            cfg,
+        )
+    }
+
+    #[test]
+    fn imports_are_merged() {
+        let cfg = Config {
+            options: Options {
+                reconciliation_strategy: reconciler::Strategy::Error,
+                log_level: Some(log::Level::Disabled),
+            },
+            imports: Some(vec![Import {
+                script: String::from(r#"echo '{"targets": [{"name": "foo", "cmd": "blah"}]}'"#),
+            }]),
+            targets: vec![target::lone("bar")],
+        }
+        .desugar();
+
+        assert_eq!(
+            DesugaredConfig::with_targets(vec![
+                dstarget::lone("bar", "b"),
+                dstarget::lone("foo", "f"),
             ]),
             cfg,
         )
