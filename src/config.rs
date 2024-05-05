@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use slog::KV;
 
-use crate::{executor::ExecuteKind, log, reconciler};
+use crate::{executor::ExecuteKind, log, reconciler, shell::execute_with_output};
 
 /// DesugaredTargetCfg is basically just a TargetCfg, but it has been
 /// re-written and simplified so that the parsing logic can be
@@ -76,6 +76,16 @@ impl KV for Options {
     }
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Import {
+    pub script: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportScriptOutput {
+    targets: Vec<TargetCfg>,
+}
+
 // NOTE: 'Desugaring' may not exactly be the right terminology here.
 // But the overall idea is we are rewriting the config in a simpler
 // but perhaps more verbose and/or less readable form. This form is
@@ -103,21 +113,32 @@ impl KV for DesugaredConfig {
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub options: Options,
+    pub imports: Option<Vec<Import>>,
     pub targets: Vec<TargetCfg>,
 }
 
 impl Config {
     pub fn desugar(self) -> DesugaredConfig {
+        let imported_targets = self
+            .imports
+            .unwrap()
+            .iter()
+            .flat_map(|import| {
+                let output = execute_with_output(&import.script);
+                serde_json::from_str::<ImportScriptOutput>(&output.unwrap().stdout)
+                    .unwrap()
+                    .targets
+            })
+            .collect::<Vec<TargetCfg>>();
+
         DesugaredConfig {
             options: self.options,
             targets: self
                 .targets
                 .into_iter()
-                .map(|t| Self::desugar_target(t, ""))
-                .collect::<Vec<Vec<DesugaredTargetCfg>>>()
-                .into_iter()
-                .flatten()
-                .collect(),
+                .chain(imported_targets.into_iter())
+                .flat_map(|t| Self::desugar_target(t, ""))
+                .collect::<Vec<DesugaredTargetCfg>>(),
         }
     }
 
@@ -257,6 +278,7 @@ impl Config {
                 reconciliation_strategy: reconciler::Strategy::Error,
                 log_level: Some(log::Level::Disabled),
             },
+            imports: Some(vec![]),
             targets,
         }
         .desugar()

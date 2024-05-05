@@ -684,6 +684,7 @@ mod tests {
                     reconciliation_strategy: crate::reconciler::Strategy::Error,
                     log_level: Some(Level::Disabled),
                 },
+                imports: Some(vec![]),
                 targets,
             }
             .desugar();

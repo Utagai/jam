@@ -1,0 +1,38 @@
+{
+    "source": "fake",
+    "targets": [
+        {
+            "name": "fake",
+            "help": "This is fake!",
+            "cmd": "echo 'what a fake command'",
+            "targets": [
+                {
+                    "name": "fake child",
+                    "help": "This is fake!",
+                    "cmd": "echo 'what a fake child command'"
+                }
+            ],
+            "deps": ["gorgeous target"]
+        },
+        {
+            "name": "very nice target",
+            "help": "This is a another target!",
+            "cmd": "echo 'what a another target command'",
+            "targets": [
+                {
+                    "name": "another target child",
+                    "help": "This is a another target!",
+                    "cmd": "echo 'what a another target child command'"
+                }
+            ],
+            "deps": []
+        },
+        {
+            "name": "gorgeous target",
+            "help": "This is a new target!",
+            "cmd": "echo 'what a new target command'",
+            "targets": [],
+            "deps": []
+        }
+    ]
+}
