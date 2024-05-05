@@ -13,6 +13,7 @@ mod executor;
 mod jam;
 mod log;
 mod reconciler;
+mod shell;
 mod tui;
 
 // NOTE: I wasn't able to figure out how to not have this be

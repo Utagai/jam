@@ -74,28 +74,17 @@ impl Executable for DryRunner {
     }
 }
 
-pub struct Shell {
-    shell: String,
-    exec_flag: &'static str,
-}
+pub struct Shell {}
 
 impl Shell {
     pub fn new() -> Shell {
-        let shell = std::env::var("SHELL").map_or(String::from("bash"), |oss| oss);
-        Shell {
-            shell,
-            exec_flag: "-c",
-        }
+        Shell {}
     }
 }
 
 impl Executable for Shell {
     fn execute(&self, cmd: &str) -> Result<bool> {
-        let exit_status = std::process::Command::new(&self.shell)
-            .arg(self.exec_flag)
-            .arg(cmd)
-            .status()?;
-        Ok(exit_status.code() == Some(0))
+        crate::shell::execute(cmd)
     }
 }
 
