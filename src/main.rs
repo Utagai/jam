@@ -62,12 +62,38 @@ impl KV for Cli {
     }
 }
 
+fn get_nearest_config_file(current_dir: &std::path::Path) -> anyhow::Result<String> {
+    let mut path = current_dir.to_path_buf();
+    let home_dir = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no home directory found"))?;
+    // In typical execution, this should terminate the home directory. However,
+    // we cannot technically control from _where_ a user actually runs this, so
+    // the more graceful thing is to also exit if we somehow reach the root
+    // directory.
+    while path != home_dir && path != std::path::Path::new("/") {
+        let possible_file_names = ["jam.yaml", "jam.yml", "jamfile.yml", "jamfile.yaml"];
+        for file_name in possible_file_names.iter() {
+            let config_path = path.join(file_name);
+            if config_path.exists() {
+                eprintln!("Found config file: {}", config_path.to_str().unwrap());
+                return Ok(config_path.to_str().unwrap().to_string());
+            }
+        }
+        path = path.parent().unwrap().to_path_buf();
+    }
+    Err(anyhow::anyhow!("no jam file found"))
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let config_path = cli
-        .config_file
-        .unwrap_or_else(|| "./rsrc/simple.yaml".to_string());
+    let current_dir = std::env::current_dir()?;
+    let config_path = match cli.config_file {
+        Some(path) => Ok(path),
+        None => match get_nearest_config_file(&current_dir) {
+            Ok(path) => Ok(path),
+            Err(err) => Err(err),
+        },
+    }?;
 
     let cfg: Config = serde_yaml::from_reader(File::open(&config_path)?)?;
 

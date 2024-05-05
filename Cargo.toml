@@ -8,6 +8,7 @@ anyhow = "1.0.68"
 clap = { version = "4.1.4", features = ["derive"] }
 crossterm = "0.26.0"
 daggy = "0.8.0"
+dirs = "5.0.1"
 either = "1.8.0"
 ratatui = "0.26.1"
 sequence_trie = "0.3.6"
