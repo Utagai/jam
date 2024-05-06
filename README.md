@@ -1,6 +1,14 @@
-![banner](./rsrc/banner.png)
-
-> <u>**J**</u>am (isn't) <u>**A**</u>nother <u>**M**</u>ake
+<div align="center">
+    <div><img src="./rsrc/banner.png" /></div>
+    <div>
+        <h3>
+        <i><b><u>J</u></b>am
+        (isn't)
+        <b><u>A</u></b>nother
+        <b><u>M</u></b>ake</i>
+        </h3>
+    </div>
+</div>
 
 ## Demo
 
