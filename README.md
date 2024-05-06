@@ -16,7 +16,7 @@
 
 ## Overview
 
-Jam is a TUI frontend and command runner. It uses a YAML based configuration and supports dynamic imports (including from other command runners such as `make` or `cargo`). There is plenty of work still left to do, but it should be at least usable now.
+Jam is a TUI frontend and command runner. It's core concept is to allow a user to run common commands in the quickest way possible by mapping them to key chords, similar to `emacs` keybinds. It uses a YAML based configuration and supports dynamic imports (including from other command runners such as `make` or `cargo`). There is plenty of work still left to do, but it should be at least usable now.
 
 ## Usage
 
