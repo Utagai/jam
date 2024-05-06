@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="182mm"
+   height="89.440399mm"
+   viewBox="0 0 182 89.440399"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25, custom)"
+   sodipodi:docname="banner.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#ffffff"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="1"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm"
+     inkscape:zoom="1.4878904"
+     inkscape:cx="237.92076"
+     inkscape:cy="144.83594"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <defs
+     id="defs1">
+    <rect
+       x="260.43216"
+       y="255.67976"
+       width="322.21353"
+       height="77.939552"
+       id="rect1" />
+    <filter
+       style="color-interpolation-filters:sRGB"
+       inkscape:label="Blur"
+       id="filter18"
+       x="-0.066029626"
+       y="-0.00017805349"
+       width="1.1320593"
+       height="1.0003561">
+      <feGaussianBlur
+         stdDeviation="5 0.01"
+         result="blur"
+         id="feGaussianBlur18" />
+    </filter>
+    <mask
+       maskUnits="userSpaceOnUse"
+       id="mask18">
+      <rect
+         style="fill:#ffffff;fill-opacity:1;stroke-width:0.264583;filter:url(#filter18)"
+         id="rect19"
+         width="181.7366"
+         height="134.79095"
+         x="-53.525169"
+         y="84.288803"
+         transform="matrix(1.2895508,0,0,1,19.506338,-3.7343141)" />
+    </mask>
+  </defs>
+  <g
+     id="g18"
+     mask="url(#mask18)"
+     transform="translate(-15.293969,-108.58849)">
+    <g
+       id="g5"
+       transform="translate(-6.3168026,148.66127)">
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:70.5556px;font-family:WindSong;-inkscape-font-specification:WindSong;fill:#182529;fill-opacity:1;stroke-width:0.264583"
+         x="124.68314"
+         y="12.930249"
+         id="text5-1"><tspan
+           sodipodi:role="line"
+           id="tspan5-5"
+           style="stroke-width:0.264583"
+           x="124.68314"
+           y="12.930249">.</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:70.5556px;font-family:WindSong;-inkscape-font-specification:WindSong;fill:#182529;fill-opacity:1;stroke-width:0.264583"
+         x="87.97982"
+         y="12.930249"
+         id="text5"><tspan
+           sodipodi:role="line"
+           id="tspan5"
+           style="stroke-width:0.264583"
+           x="87.97982"
+           y="12.930249">.</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:70.5556px;font-family:WindSong;-inkscape-font-specification:WindSong;fill:#182529;fill-opacity:1;stroke-width:0.264583"
+         x="106.33148"
+         y="12.930249"
+         id="text5-7"><tspan
+           sodipodi:role="line"
+           id="tspan5-1"
+           style="stroke-width:0.264583"
+           x="106.33148"
+           y="12.930249">.</tspan></text>
+    </g>
+    <g
+       id="g6"
+       inkscape:label="sheet music lines"
+       style="display:inline"
+       transform="matrix(0.7819562,0,0,0.35031841,23.914297,95.214257)">
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.283238"
+         id="rect5"
+         width="7.4686279"
+         height="111.67377"
+         x="-1.7782447"
+         y="89.623543" />
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.317045"
+         id="rect5-1-12-5-9-7-7-4"
+         width="231.61472"
+         height="1.6302215"
+         x="-11.024055"
+         y="92.232529" />
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.317045"
+         id="rect5-1-12-5-9-7-7"
+         width="231.61472"
+         height="1.6302215"
+         x="-11.024055"
+         y="118.47844" />
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.317045"
+         id="rect5-1-12-5-9-7"
+         width="231.61472"
+         height="1.6302215"
+         x="-11.024055"
+         y="144.72433" />
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.317045"
+         id="rect5-1-12-5-9"
+         width="231.61472"
+         height="1.6302215"
+         x="-11.024055"
+         y="170.97025" />
+      <rect
+         style="fill:#182529;fill-opacity:1;stroke-width:0.317045"
+         id="rect5-1-12-5"
+         width="231.61472"
+         height="1.6302215"
+         x="-11.024055"
+         y="197.21616" />
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:86.1381px;font-family:WindSong;-inkscape-font-specification:WindSong;display:inline;fill:#182529;fill-opacity:1;stroke-width:0.323017"
+       x="33.594334"
+       y="177.2426"
+       id="text4"
+       transform="scale(0.99740665,1.0026001)"
+       inkscape:label="clef"><tspan
+         sodipodi:role="line"
+         id="tspan4"
+         style="fill:#182529;fill-opacity:1;stroke-width:0.323017"
+         x="33.594334"
+         y="177.2426">𝄞</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:70.5556px;fill:#ffaaaa;stroke-width:0.264583"
+       x="76.990799"
+       y="153.00514"
+       id="text2"
+       inkscape:label="jam"><tspan
+         sodipodi:role="line"
+         id="tspan2"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:70.5556px;font-family:Sacramento;-inkscape-font-specification:Sacramento;fill:#ffaaaa;stroke-width:0.264583"
+         x="76.990799"
+         y="153.00514">jam.</tspan></text>
+  </g>
+</svg>

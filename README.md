@@ -1,4 +1,4 @@
-# `jam`
+![banner](./rsrc/banner.png)
 
 > <u>**J**</u>am (isn't) <u>**A**</u>nother <u>**M**</u>ake
 
