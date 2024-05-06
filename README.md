@@ -1,10 +1,14 @@
 # `jam`
 
-![demo movie](./rsrc/demo_keypresses.mp4)
-
 > <u>**J**</u>am (isn't) <u>**A**</u>nother <u>**M**</u>ake
 
-Jam is a TUI frontend and command runner. It uses a YAML based configuration and supports dynamic imports (including from other command runners such as `make` or `cargo`).
+## Demo
+
+![demo movie](./rsrc/demo.gif)
+
+## Overview
+
+Jam is a TUI frontend and command runner. It uses a YAML based configuration and supports dynamic imports (including from other command runners such as `make` or `cargo`). There is plenty of work still left to do, but it should be at least usable now.
 
 ## Usage
 

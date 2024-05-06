@@ -1,7 +1,8 @@
 # NOTE: This tape file is not "complete". VHS doesn't currently have a way of
 # displaying keypresses on the screen, so what I've done is created the
 # recording video (.mp4), and then edited the video in Da Vinci to add keypress
-# info, and created a new .mp4 file. That new file is then converted to a GIF.
+# info, and created a new .mp4 file. That new file is then converted to a GIF
+# via ffmpeg & gifski and put into the repo and linked to from the README.
 Output rsrc/demo.mp4
 
 Require jam
