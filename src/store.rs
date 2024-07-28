@@ -194,7 +194,7 @@ pub(crate) trait TargetStore<'a> {
     fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>>;
-    fn lookup(&self, shortcut: &Shortcut) -> Lookup;
+    fn lookup(&self, strategy: Strategy, shortcut: &Shortcut) -> Lookup;
 }
 
 // TODO: Lot of pubs in this file and I don't think we need them all.
@@ -342,8 +342,24 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
         }
     }
 
-    fn lookup(&self, shortcut: &Shortcut) -> Lookup {
-        todo!()
+    fn lookup(&self, strategy: Strategy, shortcut: &Shortcut) -> Lookup {
+        match self.resolve_shortcut(strategy, shortcut) {
+            Ok(idxes) => {
+                if idxes.is_empty() {
+                    Lookup::NotFound
+                } else if idxes.len() == 1 {
+                    Lookup::Found
+                } else {
+                    // Multiple.
+                    Lookup::Conflict
+                }
+            }
+            Err(ExecError::Conflict { .. }) => Lookup::Conflict, // NOTE: This doesn't ever happen, it's here just in case.
+            Err(ExecError::Reconciliation { description }) => {
+                Lookup::ReconciliationFailure(description)
+            }
+            Err(_) => Lookup::NotFound,
+        }
     }
 }
 
