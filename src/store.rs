@@ -191,7 +191,7 @@ pub(crate) trait TargetStore<'a> {
     fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self>
     where
         Self: Sized;
-    fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>>;
+    fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>>;
     fn lookup(&self, shortcut: &Shortcut) -> Lookup;
@@ -305,8 +305,33 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
         })
     }
 
-    fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>> {
-        todo!()
+    fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>> {
+        let mut mappings: Vec<(Shortcut, &str)> = self
+            .shortcuts
+            .iter()
+            .map(|(shortcut, nidxes)| -> ExecResult<Vec<(Shortcut, &str)>> {
+                let shortcut = Shortcut::from(shortcut);
+                if nidxes.len() == 1 {
+                    return Ok(vec![(shortcut, self.dag[nidxes[0]].name)]);
+                }
+
+                // If there are multiple though, we should reconcile and return
+                // the shortcuts with the reconciled character added.
+                let reconciliation_chars = self.reconcile(strategy, &shortcut, &nidxes)?;
+                reconciliation_chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| Ok((shortcut.append(c), self.dag[nidxes[i]].name)))
+                    .collect()
+            })
+            .collect::<ExecResult<Vec<Vec<(Shortcut, &str)>>>>()?
+            .into_iter()
+            .flatten() // Flattens the Vec<Vec<...>> into Vec<...>.
+            .collect();
+
+        // Sort so that the return value is deterministic.
+        mappings.sort();
+        Ok(mappings)
     }
 
     fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>> {
@@ -343,4 +368,28 @@ pub fn validate_target_cfg(
     }
 
     Ok(())
+}
+
+impl<'a> TrieDagStore<'a> {
+    fn reconcile(
+        &self,
+        strategy: Strategy,
+        shortcut: &Shortcut,
+        conflicts: &[NodeIdx],
+    ) -> ExecResult<Vec<char>> {
+        match reconcile(
+            strategy,
+            &self.shortcuts,
+            &conflicts
+                .iter()
+                .map(|nidx| self.dag[*nidx].name)
+                .collect::<Vec<&str>>(),
+            shortcut,
+        ) {
+            Ok(keys) => Ok(keys),
+            Err(err) => Err(ExecError::Reconciliation {
+                description: err.to_string(),
+            }),
+        }
+    }
 }
