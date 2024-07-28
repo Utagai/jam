@@ -1,9 +1,9 @@
-# NOTE: This tape file is not "complete". VHS doesn't currently have a way of
-# displaying keypresses on the screen, so what I've done is created the
-# recording video (.mp4), and then edited the video in Da Vinci to add keypress
-# info, and created a new .mp4 file. That new file is then converted to a GIF
-# via ffmpeg & gifski and put into the repo and linked to from the README.
+# NOTE: This tape file uses a new feature (KeyStrokes) that is under review from
+# vhs. Until my PR is merged, this tape file is used with a build of vhs from my
+# feature branch.
+# See the PR: https://github.com/charmbracelet/vhs/pull/496
 Output rsrc/demo.mp4
+Output rsrc/demo.gif
 
 Require jam
 Require gum
@@ -12,6 +12,7 @@ Set Shell "bash"
 Set FontSize 24
 Set Width 1200
 Set Height 600
+Set KeyStrokes Show
 
 Type "jam"
 Sleep 500ms
@@ -28,7 +29,7 @@ Sleep 1s
 Type "?"
 Sleep 1s
 Type "."
-Sleep 5s 
+Sleep 4500ms 
 Type "jam"
 Sleep 300ms 
 Enter
