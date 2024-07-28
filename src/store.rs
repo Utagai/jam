@@ -11,11 +11,10 @@ use crate::{
     reconciler::{reconcile, Strategy},
 };
 
-// TODO: The fields here likely don't need to be pub eventually.
 pub struct Target<'a> {
     pub name: &'a str,
-    pub shortcut: Shortcut,
-    pub help: &'a str,
+    shortcut: Shortcut,
+    help: &'a str,
     pub cmd: Option<&'a str>,
     pub execute_kind: ExecuteKind,
 }
@@ -69,7 +68,7 @@ impl Shortcut {
     }
 
     // NOTE: Same thing as described for append() above is worth considering here.
-    pub fn tail(&self) -> (Shortcut, Option<char>) {
+    fn tail(&self) -> (Shortcut, Option<char>) {
         let mut new_vec = self.0.clone();
         let key = new_vec.pop();
         (Shortcut(new_vec), key)
@@ -204,9 +203,8 @@ pub(crate) trait TargetStore<'a> {
     fn children(&self, target: &Target) -> ExecResult<Vec<&Target>>;
 }
 
-// TODO: Lot of pubs in this file and I don't think we need them all.
-pub type IdxT = u32;
-pub type NodeIdx = NodeIndex<IdxT>;
+type IdxT = u32;
+type NodeIdx = NodeIndex<IdxT>;
 // NOTE: I wonder if we actually really need a trie. I think the more general
 // N-ary tree would work just as well given how we use this trie. We're not
 // actually making good use of the strengths of a trie, I think. In either case,
@@ -216,6 +214,8 @@ pub type NodeIdx = NodeIndex<IdxT>;
 // can probably just dump everything into a vector and be more than fast enough.
 // NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
 // can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
+// TODO: This type should not be pub, but the reconciler is currently forcing us
+// to leak this implementation detail.
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct TrieDagStore<'a> {
@@ -418,7 +418,7 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
     }
 }
 
-pub fn validate_target_cfg(
+fn validate_target_cfg(
     cfg: &DesugaredTargetCfg,
     node_idxes: &HashMap<&str, NodeIdx>,
 ) -> ParseResult<()> {
