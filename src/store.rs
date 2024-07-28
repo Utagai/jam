@@ -1,3 +1,5 @@
+use daggy::{Dag, NodeIndex};
+use sequence_trie::SequenceTrie;
 use std::slice::Iter;
 use thiserror::Error;
 
@@ -184,4 +186,49 @@ pub(crate) trait TargetStore {
     fn lookup(&self, shortcut: &Shortcut) -> Lookup;
     fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()>;
     fn execute_by_name(&self, name: &str) -> ExecResult<()>;
+}
+
+// TODO: Lot of pubs in this file and I don't think we need them all.
+pub type IdxT = u32;
+pub type NodeIdx = NodeIndex<IdxT>;
+// NOTE: I wonder if we actually really need a trie. I think the more general
+// N-ary tree would work just as well given how we use this trie. We're not
+// actually making good use of the strengths of a trie, I think. In either case,
+// it shouldn't really change much in the code, even in terms of complexity, so
+// I'm just going to keep it here until I find a good enough reason to refactor.
+// I mean really, for the sort of scales that this binary is executing at, we
+// can probably just dump everything into a vector and be more than fast enough.
+// NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
+// can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
+pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
+
+struct TrieDagStore<'a> {
+    trie: ShortcutTrie,
+    dag: Dag<Target<'a>, IdxT>,
+}
+
+impl<'a> TargetStore for TrieDagStore<'a> {
+    fn new(cfgs: Vec<DesugaredTargetCfg>) -> Self {
+        todo!()
+    }
+
+    fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>> {
+        todo!()
+    }
+
+    fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>> {
+        todo!()
+    }
+
+    fn lookup(&self, shortcut: &Shortcut) -> Lookup {
+        todo!()
+    }
+
+    fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()> {
+        todo!()
+    }
+
+    fn execute_by_name(&self, name: &str) -> ExecResult<()> {
+        todo!()
+    }
 }

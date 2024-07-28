@@ -9,21 +9,10 @@ use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
     executor::Executor,
     reconciler::reconcile,
-    store::{ExecError, ExecResult, Lookup, NextKey, Shortcut, Target},
+    store::{
+        ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, Shortcut, ShortcutTrie, Target,
+    },
 };
-
-type IdxT = u32;
-pub type NodeIdx = NodeIndex<IdxT>;
-// NOTE: I wonder if we actually really need a trie. I think the more general
-// N-ary tree would work just as well given how we use this trie. We're not
-// actually making good use of the strengths of a trie, I think. In either case,
-// it shouldn't really change much in the code, even in terms of complexity, so
-// I'm just going to keep it here until I find a good enough reason to refactor.
-// I mean really, for the sort of scales that this binary is executing at, we
-// can probably just dump everything into a vector and be more than fast enough.
-// NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
-// can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
-pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct Jam<'a> {
     opts: &'a Options,
