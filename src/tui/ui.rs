@@ -7,8 +7,7 @@ use ratatui::{
 };
 use std::iter;
 
-use crate::jam::NextKey;
-use crate::store::Shortcut;
+use crate::store::{NextKey, Shortcut};
 
 use super::core::{
     CURRENT_PREFIX_INDICATOR_HEIGHT, ELLIPSES_HEIGHT, ERROR_SECTION_HEIGHT,
@@ -343,7 +342,7 @@ mod tests {
     };
 
     use crate::{
-        jam::NextKey,
+        store::NextKey,
         tui::ui::{ui, UIState},
     };
 

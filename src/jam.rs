@@ -4,13 +4,12 @@ use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
 use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
-use thiserror::Error;
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg, Options},
     executor::Executor,
     reconciler::reconcile,
-    store::{Shortcut, Target},
+    store::{ExecError, ExecResult, Lookup, NextKey, Shortcut, Target},
 };
 
 type IdxT = u32;
@@ -34,30 +33,6 @@ pub struct Jam<'a> {
     logger: slog::Logger,
 }
 
-#[derive(Error, Debug, PartialEq)]
-pub enum ExecError {
-    #[error("given shortcut '{shortcut}' is ambiguous (i.e. is it {conflict_msg}?)")]
-    Conflict {
-        shortcut: Shortcut,
-        conflict_msg: String,
-    },
-    #[error("no command for given shortcut '{shortcut}'")]
-    ShortcutNotFound { shortcut: Shortcut },
-    #[error("no command for given target name '{target_name}'")]
-    TargetNotFound { target_name: String },
-    #[error("target '{name}' has no executable function")]
-    CannotExec { name: String },
-    #[error("{description}")]
-    Reconciliation { description: String },
-    #[error("{description}")]
-    Executor { description: String },
-    #[error("failed to execute dependency ('{dep_name}'): {err}")]
-    Dependency {
-        dep_name: String,
-        err: Box<ExecError>,
-    },
-}
-
 // ParseResult is not really very useful at the moment. However, it
 // may be something that we wish to embellish further in the
 // future. This type can allow us to do that and save a bit of
@@ -65,40 +40,6 @@ pub enum ExecError {
 // into two distinct classes errors: parsing errors & execution
 // errors.
 type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
-type ExecResult<T> = Result<T, ExecError>;
-
-#[derive(Debug, PartialEq)]
-pub enum Lookup {
-    NotFound,
-    Found,
-    ReconciliationFailure(String),
-    Conflict,
-}
-
-pub enum NextKey<'a> {
-    LeafKey { key: char, target_name: &'a str },
-    BranchKey { key: char },
-}
-
-impl<'a> NextKey<'a> {
-    fn new(key: char, target_names: Vec<&'a str>) -> NextKey<'a> {
-        if target_names.len() == 1 {
-            NextKey::LeafKey {
-                key,
-                target_name: target_names[0],
-            }
-        } else {
-            NextKey::BranchKey { key }
-        }
-    }
-
-    pub fn key(&self) -> char {
-        match self {
-            NextKey::LeafKey { key, .. } => *key,
-            NextKey::BranchKey { key } => *key,
-        }
-    }
-}
 
 impl<'a> Jam<'a> {
     pub fn new(
