@@ -3,7 +3,8 @@ use std::{collections::HashSet, str::Chars};
 use anyhow::anyhow;
 use serde::Deserialize;
 
-use crate::jam::{Shortcut, ShortcutTrie};
+use crate::jam::ShortcutTrie;
+use crate::store::Shortcut;
 
 type Result = anyhow::Result<Vec<char>>;
 

@@ -6,7 +6,8 @@ use config::Config;
 use slog::{debug, info, Record, KV};
 
 use executor::Executor;
-use jam::{Jam, Shortcut};
+use jam::Jam;
+use store::Shortcut;
 
 mod config;
 mod executor;
@@ -14,6 +15,7 @@ mod jam;
 mod log;
 mod reconciler;
 mod shell;
+mod store;
 mod tui;
 
 // NOTE: I wasn't able to figure out how to not have this be

@@ -16,7 +16,8 @@ use ratatui::{
 use slog::{debug, info, Logger};
 
 use super::ui::{ui, UIState};
-use crate::jam::{Jam, Lookup, NextKey, Shortcut};
+use crate::jam::{Jam, Lookup, NextKey};
+use crate::store::Shortcut;
 
 pub(crate) const VISUAL_SEP_EMPTY_LINE_HEIGHT: u16 = 1;
 pub(crate) const CURRENT_PREFIX_INDICATOR_HEIGHT: u16 = 1;
