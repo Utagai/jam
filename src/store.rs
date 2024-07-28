@@ -193,7 +193,7 @@ pub(crate) trait TargetStore<'a> {
         Self: Sized;
     fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
-    fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>>;
+    fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>>;
     fn lookup(&self, shortcut: &Shortcut) -> Lookup;
     fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()>;
     fn execute_by_name(&self, name: &str) -> ExecResult<()>;
@@ -216,6 +216,7 @@ pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 struct TrieDagStore<'a> {
     shortcuts: ShortcutTrie,
     dag: Dag<Target<'a>, IdxT>,
+    logger: slog::Logger,
 }
 
 impl<'a> TargetStore<'a> for TrieDagStore<'a> {
@@ -302,6 +303,7 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
             // to create a separate type here for isolation.
             dag,
             shortcuts: trie,
+            logger: logger.new(o!()),
         })
     }
 
@@ -334,8 +336,12 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
         Ok(mappings)
     }
 
-    fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>> {
-        todo!()
+    fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>> {
+        if let Some(strategy) = strategy {
+            return self.next_conflict(strategy, prefix);
+        } else {
+            return self.next_no_conflict(prefix);
+        }
     }
 
     fn lookup(&self, shortcut: &Shortcut) -> Lookup {
@@ -390,6 +396,149 @@ impl<'a> TrieDagStore<'a> {
             Err(err) => Err(ExecError::Reconciliation {
                 description: err.to_string(),
             }),
+        }
+    }
+
+    // TODO: Probably these two should be required methods and then next() is auto-implemented.
+    fn next_conflict(&self, strategy: Strategy, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
+        let nidxes = self
+            .shortcuts
+            .get(prefix.iter())
+            .ok_or(ExecError::ShortcutNotFound {
+                shortcut: prefix.clone(),
+            })?;
+        self.reconcile(strategy, prefix, nidxes).and_then(|keys| {
+            keys.into_iter()
+                .map(|key| {
+                    self.resolve_shortcut(strategy, &prefix.append(&key))
+                        .map(|nidxes| {
+                            NextKey::new(
+                                key,
+                                nidxes.iter().map(|idx| self.dag[*idx].name).collect(),
+                            )
+                        })
+                })
+                .collect::<ExecResult<Vec<NextKey>>>()
+        })
+    }
+
+    /// resolve_shortcut takes a shortcut and returns the target(s) that it
+    /// refers to by their node indexes. This method is special because it is
+    /// capable of recognizing shortcuts with reconciliation characters, and
+    /// deducing what target the given reconciled shortcut refers to.
+    fn resolve_shortcut(
+        &self,
+        strategy: Strategy,
+        shortcut: &Shortcut,
+    ) -> ExecResult<Vec<NodeIdx>> {
+        let shortcuts_ref = &self.shortcuts;
+        let target_idxes;
+        match shortcuts_ref.get(shortcut.iter()) {
+            Some(nidxes) => target_idxes = nidxes.to_vec(),
+            None => {
+                debug!(
+                    self.logger,
+                    "found potential reconciliation character, attempting reconciliation"
+                );
+                // In this case, it is possible that the user has
+                // actually specified a reconciliation character,
+                // which won't exist in the trie until we
+                // reconcile. So let's do that.
+                let (tail, key) = shortcut.tail();
+                // To see if this is correct, first, we expect the tail to exist:
+                match shortcuts_ref.get(tail.iter()) {
+                    Some(nidxes) => {
+                        // Secondly, not only must it exist, but it
+                        // must be referring to a shortcut that has
+                        // conflicts. If it has none, then the user
+                        // should just specify the tail.
+                        if nidxes.len() <= 1 {
+                            return Err(ExecError::ShortcutNotFound {
+                                shortcut: Shortcut::from(shortcut),
+                            });
+                        }
+
+                        info!(self.logger, "reconciling with strategy"; o!("strategy" => strategy.to_string()));
+
+                        // If it does indeed have a conflict,
+                        // then let's make sure that the specified
+                        // reconciliation key is a valid one:
+                        let reconciliation_keys = self.reconcile(strategy, &tail, nidxes)?;
+
+                        // The returned reconciliation keys are 1:1
+                        // with the node indexes. i.e., the
+                        // reconciliation key at index i is the
+                        // reconciliation key for the conflicting
+                        // target at index i in nidxes.
+                        let nidx = match reconciliation_keys
+                            .iter()
+                            .position(|reconciliation_key| Some(reconciliation_key) == key.as_ref())
+                        {
+                            // If it isn't there, then this reconciliation
+                            // key is not a good one and we should error.
+                            None => {
+                                return Err(ExecError::ShortcutNotFound {
+                                    shortcut: Shortcut::from(shortcut),
+                                });
+                            }
+                            // However, and finally, if it is good, then
+                            // let's identify which nidx we are looking at
+                            // and return just that one:
+                            Some(pos) => nidxes[pos],
+                        };
+
+                        debug!(self.logger, "reconciled");
+                        target_idxes = vec![nidx];
+                    }
+                    None => {
+                        return Err(ExecError::ShortcutNotFound {
+                            shortcut: Shortcut::from(shortcut),
+                        });
+                    }
+                }
+            }
+        };
+        Ok(target_idxes)
+    }
+
+    fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
+        // If we're not in conflict, then we can just look up the prefix in the trie directly:
+        let subtrie = self.shortcuts.get_node(prefix.iter());
+        if let Some(subtrie) = subtrie {
+            let mut keys_to_names: Vec<NextKey> = subtrie
+                .children_with_keys()
+                .iter()
+                .filter_map(|(key, _)| {
+                    // For this key, get the target names that that it leads to.
+                    let names = self
+                        .shortcuts
+                        .get_node(prefix.append(*key).iter())
+                        .expect("failed to look up non-conflict shortcut")
+                        .values()
+                        .flatten()
+                        .map(|v| self.dag[*v].name)
+                        .collect();
+                    Some(NextKey::new(**key, names))
+                })
+                .collect();
+            // Because the keys we return are individual _characters_ of
+            // _full_ sequences, it is possible to return duplicates
+            // here. For example, consider the following shortcuts to
+            // exist:
+            //   a
+            //   ab
+            // The first call with the prefix being the empty shortcut will
+            // return [a,a] unless we de-dupe things.
+            keys_to_names.sort_by(|a, b| a.key().cmp(&b.key()));
+            keys_to_names.dedup_by(|a, b| a.key() == b.key());
+
+            // Now return the keys, mapped to their next target names.
+            Ok(keys_to_names)
+        } else {
+            // If there is no subtrie for this prefix, then there
+            // should be no next_keys, there's nothing to extend it
+            // with.
+            Ok(vec![])
         }
     }
 }
