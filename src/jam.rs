@@ -1,17 +1,11 @@
-use std::collections::HashMap;
-
-use anyhow::{anyhow, bail};
-use daggy::{Dag, NodeIndex, Walker};
-use sequence_trie::SequenceTrie;
-use slog::{debug, info, o};
+use slog::{info, o};
 
 use crate::{
-    config::{DesugaredConfig, DesugaredTargetCfg, Options},
+    config::{DesugaredConfig, Options},
     executor::Executor,
-    reconciler::reconcile,
     store::{
-        validate_target_cfg, ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, ParseResult,
-        Shortcut, ShortcutTrie, Target, TargetStore, TrieDagStore,
+        ExecError, ExecResult, Lookup, NextKey, ParseResult, Shortcut, Target, TargetStore,
+        TrieDagStore,
     },
 };
 
@@ -134,8 +128,6 @@ mod tests {
     use crate::config::target;
     use crate::config::{Config, TargetCfg};
     use crate::testutils::logger;
-
-    use slog::*;
 
     fn get_jam(cfg: &DesugaredConfig) -> Jam {
         Jam::new(&logger::test(), Executor::new(), cfg).expect("expected no errors from parsing")

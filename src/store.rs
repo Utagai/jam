@@ -6,7 +6,7 @@ use std::{collections::HashMap, slice::Iter};
 use thiserror::Error;
 
 use crate::{
-    config::{DesugaredConfig, DesugaredTargetCfg},
+    config::DesugaredTargetCfg,
     executor::ExecuteKind,
     reconciler::{reconcile, Strategy},
 };
