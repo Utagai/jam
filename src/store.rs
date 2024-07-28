@@ -175,11 +175,19 @@ pub enum ExecError {
     },
 }
 
+// ParseResult is not really very useful at the moment. However, it may be
+// something that we wish to embellish further in the future. This type can
+// allow us to do that and save a bit of keystrokes. More importantly though, it
+// lets us split the API into two distinct classes errors: parsing errors &
+// execution errors.
+pub type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 // TODO: Maybe we just move all of this to jam.rs? The key value-add of the work is to just decouple the store implementation from the parsing/execution implementaiton (i.e. jam).
 pub type ExecResult<T> = Result<T, ExecError>;
 
 pub(crate) trait TargetStore {
-    fn new(cfgs: Vec<DesugaredTargetCfg>) -> Self;
+    fn new(cfgs: Vec<DesugaredTargetCfg>) -> ParseResult<Self>
+    where
+        Self: Sized;
     fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>>;
@@ -208,7 +216,7 @@ struct TrieDagStore<'a> {
 }
 
 impl<'a> TargetStore for TrieDagStore<'a> {
-    fn new(cfgs: Vec<DesugaredTargetCfg>) -> Self {
+    fn new(cfgs: Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
         todo!()
     }
 

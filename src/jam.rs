@@ -10,7 +10,8 @@ use crate::{
     executor::Executor,
     reconciler::reconcile,
     store::{
-        ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, Shortcut, ShortcutTrie, Target,
+        ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, ParseResult, Shortcut, ShortcutTrie,
+        Target,
     },
 };
 
@@ -21,14 +22,6 @@ pub struct Jam<'a> {
     shortcuts: ShortcutTrie,
     logger: slog::Logger,
 }
-
-// ParseResult is not really very useful at the moment. However, it
-// may be something that we wish to embellish further in the
-// future. This type can allow us to do that and save a bit of
-// keystrokes. More importantly though, it lets us split the Jam API
-// into two distinct classes errors: parsing errors & execution
-// errors.
-type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 
 impl<'a> Jam<'a> {
     pub fn new(
