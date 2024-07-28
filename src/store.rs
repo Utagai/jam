@@ -249,8 +249,8 @@ impl<'a> TargetStore<'a> for SimpleStore<'a> {
             .iter()
             .map(|(shortcut, targets)| -> ExecResult<Vec<(Shortcut, &str)>> {
                 let shortcut = Shortcut::from(shortcut);
-                if let Some(target) = targets.first() {
-                    return Ok(vec![(shortcut, target.name)]);
+                if targets.len() == 1 {
+                    return Ok(vec![(shortcut, targets[0].name)]);
                 }
 
                 // If there are multiple though, we should reconcile and return
