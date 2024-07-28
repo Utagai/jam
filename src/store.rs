@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail};
-use daggy::{Dag, NodeIndex};
+use daggy::{Dag, NodeIndex, Walker};
 use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
 use std::{collections::HashMap, slice::Iter};
@@ -195,6 +195,13 @@ pub(crate) trait TargetStore<'a> {
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>>;
     fn lookup(&self, strategy: Strategy, shortcut: &Shortcut) -> Lookup;
+    // TODO: Should be able to autoimplement a more ergonomic method?
+    fn get_by_shortcut(&self, strategy: Strategy, shortcut: Shortcut) -> ExecResult<&Target>;
+    // NOTE: get_by_target_name does not require a reconciliation strategy
+    // because target_names are globally unique, so there is no possibility of
+    // conflict to reconcile.
+    fn get_by_target_name(&self, target_name: &str) -> ExecResult<&Target>;
+    fn children(&self, target: &Target) -> ExecResult<Vec<&Target>>;
 }
 
 // TODO: Lot of pubs in this file and I don't think we need them all.
@@ -211,7 +218,7 @@ pub type NodeIdx = NodeIndex<IdxT>;
 // can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
-struct TrieDagStore<'a> {
+pub struct TrieDagStore<'a> {
     shortcuts: ShortcutTrie,
     dag: Dag<Target<'a>, IdxT>,
     logger: slog::Logger,
@@ -360,6 +367,54 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
             }
             Err(_) => Lookup::NotFound,
         }
+    }
+
+    fn get_by_shortcut(&self, strategy: Strategy, shortcut: Shortcut) -> ExecResult<&Target> {
+        let target_idxes = self.resolve_shortcut(strategy, &shortcut)?;
+        if target_idxes.len() > 1 {
+            return Err(ExecError::Conflict {
+                shortcut,
+                conflict_msg: target_idxes
+                    .iter()
+                    .map(|idx| format!("'{}'", self.dag[*idx].name))
+                    .collect::<Vec<String>>()
+                    .join(" or "),
+            });
+        }
+        if let Some(nidx) = target_idxes.first() {
+            return Ok(&self.dag[*nidx]);
+        } else {
+            Err(ExecError::ShortcutNotFound { shortcut })
+        }
+    }
+
+    fn get_by_target_name(&self, target_name: &str) -> ExecResult<&Target> {
+        let nidx = self
+            .shortcuts
+            .values()
+            .flatten()
+            .find(|nidx| self.dag[**nidx].name == target_name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target_name.to_string(),
+            })?;
+        return Ok(&self.dag[*nidx]);
+    }
+
+    fn children(&self, target: &Target) -> ExecResult<Vec<&Target>> {
+        // TODO: This is inefficient, but we will be replacing this with a simpler implementation anyways.
+        let nidx = self
+            .shortcuts
+            .values()
+            .flatten()
+            .find(|nidx| self.dag[**nidx].name == target.name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target.name.to_string(),
+            })?;
+        self.dag
+            .children(*nidx)
+            .iter(&self.dag)
+            .map(|child| Ok(&self.dag[child.1]))
+            .collect()
     }
 }
 
@@ -545,6 +600,334 @@ impl<'a> TrieDagStore<'a> {
             // should be no next_keys, there's nothing to extend it
             // with.
             Ok(vec![])
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TrieDagStore;
+    use crate::config::DesugaredConfig;
+    use crate::store::{NodeIdx, Target, TargetStore};
+    use crate::testutils::logger;
+
+    fn get_ts(cfg: &DesugaredConfig) -> TrieDagStore {
+        TrieDagStore::new(&logger::test(), &cfg.targets).expect("expected no errors from parsing")
+    }
+
+    mod parse {
+        use super::*;
+
+        use crate::config::target;
+        use crate::config::{Config, Options, TargetCfg};
+        use crate::log::Level;
+
+        // TODO: This should probably test across all impls at once?
+        impl<'a> TrieDagStore<'a> {
+            fn node_has_target(&self, target_name: &str) -> Option<NodeIdx> {
+                self.shortcuts
+                    .iter()
+                    .flat_map(|kv| kv.1.clone())
+                    .find(|nidx| self.dag[*nidx].name == target_name)
+            }
+
+            fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
+                self.shortcuts
+                    .iter()
+                    .flat_map(|kv| kv.1.clone())
+                    .map(|nidx| &self.dag[nidx])
+                    .find(|target| target.name == target_name)
+            }
+
+            fn has_target(&self, target_name: &str) -> bool {
+                self.get_target_by_name(target_name).is_some()
+            }
+
+            fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
+                let depender_idx = self.node_has_target(dependee);
+                let dependent_idx = self.node_has_target(dependent);
+                if match depender_idx.zip(dependent_idx) {
+                    Some((depender_idx, dependent_idx)) => {
+                        self.dag.find_edge(depender_idx, dependent_idx).is_some()
+                    }
+                    None => false,
+                } {
+                    return true;
+                }
+
+                false
+            }
+        }
+
+        fn check_ts_err(targets: Vec<TargetCfg>, expected_err: &str) {
+            let cfg = Config {
+                options: Options {
+                    reconciliation_strategy: crate::reconciler::Strategy::Error,
+                    log_level: Some(Level::Disabled),
+                },
+                imports: Some(vec![]),
+                targets,
+            }
+            .desugar();
+            if let Err(err) = TrieDagStore::new(&logger::test(), &cfg.targets) {
+                assert_eq!(format!("{err}").trim(), expected_err)
+            } else {
+                panic!("expected an error from parsing, but got none")
+            }
+        }
+
+        fn verify_ts_dag(ts: TrieDagStore, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
+            for target in targets {
+                assert!(ts.has_target(target));
+            }
+
+            for dep in deps {
+                assert!(ts.has_dep(dep.0, dep.1));
+            }
+
+            assert_eq!(ts.dag.node_count(), targets.len());
+            assert_eq!(ts.dag.edge_count(), deps.len());
+        }
+
+        mod nodeps {
+            use super::*;
+
+            #[test]
+            fn single_target() {
+                let expected_target_name = "foo";
+                let cfg = Config::with_targets(vec![target::lone(expected_target_name)]);
+                let ts = get_ts(&cfg);
+                verify_ts_dag(ts, &vec![expected_target_name], &vec![]);
+            }
+
+            #[test]
+            fn zero_targets() {
+                let cfg = Config::with_targets(vec![]);
+                let ts = get_ts(&cfg);
+                verify_ts_dag(ts, &vec![], &vec![]);
+            }
+
+            #[test]
+            fn multiple_targets() {
+                let expected_target_names = vec!["foo", "bar", "quux"];
+                let cfg = Config::with_targets(
+                    expected_target_names
+                        .iter()
+                        .map(|name| target::lone(name))
+                        .collect(),
+                );
+                let ts = get_ts(&cfg);
+                expected_target_names
+                    .iter()
+                    .for_each(|name| assert!(ts.has_target(name)));
+                verify_ts_dag(ts, &expected_target_names, &vec![]);
+            }
+        }
+
+        mod deps {
+            use super::*;
+
+            #[test]
+            fn single_dependency() {
+                let depcfg = Config::with_targets(vec![
+                    target::lone("bar"),
+                    target::dep("foo", vec!["bar"]),
+                ]);
+                let depts = get_ts(&depcfg);
+                let subcfg =
+                    Config::with_targets(vec![target::sub("foo", vec![target::lone("bar")])]);
+                let subts = get_ts(&subcfg);
+                verify_ts_dag(depts, &vec!["foo", "bar"], &vec![("foo", "bar")]);
+                verify_ts_dag(subts, &vec!["foo", "foo-bar"], &vec![("foo", "foo-bar")]);
+            }
+
+            #[test]
+            fn one_target_two_dependents() {
+                let depcfg = Config::with_targets(vec![
+                    target::lone("bar"),
+                    target::lone("quux"),
+                    target::dep("foo", vec!["bar", "quux"]),
+                ]);
+                let depts = get_ts(&depcfg);
+
+                let subcfg = Config::with_targets(vec![target::sub(
+                    "foo",
+                    vec![target::lone("bar"), target::lone("quux")],
+                )]);
+                let subts = get_ts(&subcfg);
+                verify_ts_dag(
+                    depts,
+                    &vec!["foo", "bar", "quux"],
+                    &vec![("foo", "bar"), ("foo", "quux")],
+                );
+                verify_ts_dag(
+                    subts,
+                    &vec!["foo", "foo-bar", "foo-quux"],
+                    &vec![("foo", "foo-bar"), ("foo", "foo-quux")],
+                );
+            }
+
+            #[test]
+            fn single_dependency_but_dependee_defined_first() {
+                let cfg = Config::with_targets(vec![
+                    target::dep("foo", vec!["bar"]),
+                    target::lone("bar"),
+                ]);
+                let ts = get_ts(&cfg);
+                verify_ts_dag(ts, &vec!["foo", "bar"], &vec![("foo", "bar")]);
+            }
+
+            #[test]
+            fn two_targets_one_dep_each() {
+                let depcfg = Config::with_targets(vec![
+                    target::lone("c"),
+                    target::lone("d"),
+                    target::dep("a", vec!["c"]),
+                    target::dep("b", vec!["d"]),
+                ]);
+                let depts = get_ts(&depcfg);
+
+                let subcfg = Config::with_targets(vec![
+                    target::sub("a", vec![target::lone("c")]),
+                    target::sub("b", vec![target::lone("d")]),
+                ]);
+                let subts = get_ts(&subcfg);
+                verify_ts_dag(
+                    depts,
+                    &vec!["a", "b", "c", "d"],
+                    &vec![("a", "c"), ("b", "d")],
+                );
+                verify_ts_dag(
+                    subts,
+                    &vec!["a", "b", "a-c", "b-d"],
+                    &vec![("a", "a-c"), ("b", "b-d")],
+                );
+            }
+
+            #[test]
+            fn two_targets_share_a_dep() {
+                let depcfg = Config::with_targets(vec![
+                    target::lone("c"),
+                    target::dep("a", vec!["c"]),
+                    target::dep("b", vec!["c"]),
+                ]);
+                let depts = get_ts(&depcfg);
+
+                let subcfg = Config::with_targets(vec![
+                    target::sub("a", vec![target::lone("c")]),
+                    target::dep("b", vec!["a-c"]),
+                ]);
+                let subts = get_ts(&subcfg);
+                verify_ts_dag(depts, &vec!["a", "b", "c"], &vec![("a", "c"), ("b", "c")]);
+                verify_ts_dag(
+                    subts,
+                    &vec!["a", "b", "a-c"],
+                    &vec![("a", "a-c"), ("b", "a-c")],
+                );
+            }
+        }
+
+        mod errors {
+            use super::*;
+
+            #[test]
+            fn immediate_cycle() {
+                check_ts_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["baz"]),
+                    ],
+                    "'foo' -> 'baz' creates a cycle",
+                );
+            }
+
+            #[test]
+            fn long_cycle() {
+                check_ts_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["corge"]),
+                        target::dep("corge", vec!["quux"]),
+                        target::dep("quux", vec!["baz"]),
+                    ],
+                    "'quux' -> 'baz' creates a cycle",
+                );
+            }
+
+            #[test]
+            fn dep_that_dne() {
+                check_ts_err(
+                    vec![
+                        target::dep("baz", vec!["foo"]),
+                        target::dep("foo", vec!["I DO NOT EXIST"]),
+                    ],
+                    "reference to nonexistent dep: I DO NOT EXIST",
+                );
+            }
+
+            #[test]
+            fn no_sub_or_deps_or_cmd() {
+                check_ts_err(
+                        vec![TargetCfg {
+                            name: String::from("foo"),
+                            shortcut_str: None,
+                            help: None,
+                            cmd: None,
+                            targets: None,
+                            deps: None,
+														execute_kind: None,
+                        }],
+                        "a command without an executable command must have dependencies or subtargets, but 'foo' does not",
+                    )
+            }
+
+            mod duped_target_name {
+                use super::*;
+
+                #[test]
+                fn same_level() {
+                    check_ts_err(
+                        vec![target::lone("foo"), target::lone("foo")],
+                        "duplicate target name: 'foo'",
+                    );
+                }
+
+                #[test]
+                fn diff_level() {
+                    check_ts_err(
+                        vec![
+                            target::sub("foo", vec![target::lone("bar")]),
+                            target::lone("foo-bar"),
+                        ],
+                        "duplicate target name: 'foo-bar'",
+                    );
+                }
+            }
+
+            mod target_name_validation {
+                use super::*;
+
+                #[test]
+                fn empty_target_name() {
+                    check_ts_err(vec![target::lone("")], "cannot have an empty target name");
+                }
+
+                #[test]
+                fn target_name_with_period() {
+                    check_ts_err(
+                        vec![target::lone("pow.")],
+                        "cannot have a '.' in a target name: 'pow.'",
+                    );
+                }
+
+                #[test]
+                fn target_name_with_question() {
+                    check_ts_err(
+                        vec![target::lone("pow?")],
+                        "cannot have a '?' in a target name: 'pow?'",
+                    );
+                }
+            }
         }
     }
 }
