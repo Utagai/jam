@@ -195,8 +195,6 @@ pub(crate) trait TargetStore<'a> {
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>>;
     fn lookup(&self, shortcut: &Shortcut) -> Lookup;
-    fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()>;
-    fn execute_by_name(&self, name: &str) -> ExecResult<()>;
 }
 
 // TODO: Lot of pubs in this file and I don't think we need them all.
@@ -345,14 +343,6 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
     }
 
     fn lookup(&self, shortcut: &Shortcut) -> Lookup {
-        todo!()
-    }
-
-    fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()> {
-        todo!()
-    }
-
-    fn execute_by_name(&self, name: &str) -> ExecResult<()> {
         todo!()
     }
 }
