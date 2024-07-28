@@ -174,7 +174,10 @@ pub enum ExecError {
 pub type ExecResult<T> = Result<T, ExecError>;
 
 pub(crate) trait TargetStore {
-    fn get(&self, key: &str) -> Option<&str>;
-    fn set(&mut self, key: &str, value: &str);
-    fn remove(&mut self, key: &str);
+    fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>>;
+    // TODO: Shoudl we keep this as "Exec" result?
+    fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>>;
+    fn lookup(&self, shortcut: &Shortcut) -> Lookup;
+    fn execute_by_shortcut(&self, shortcut: &Shortcut) -> ExecResult<()>;
+    fn execute_by_name(&self, name: &str) -> ExecResult<()>;
 }
