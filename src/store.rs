@@ -1,11 +1,14 @@
+use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex};
 use sequence_trie::SequenceTrie;
-use std::slice::Iter;
+use slog::{debug, info, o};
+use std::{collections::HashMap, slice::Iter};
 use thiserror::Error;
 
 use crate::{
     config::{DesugaredConfig, DesugaredTargetCfg},
     executor::ExecuteKind,
+    reconciler::{reconcile, Strategy},
 };
 
 // TODO: The fields here likely don't need to be pub eventually.
@@ -184,8 +187,8 @@ pub type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 // TODO: Maybe we just move all of this to jam.rs? The key value-add of the work is to just decouple the store implementation from the parsing/execution implementaiton (i.e. jam).
 pub type ExecResult<T> = Result<T, ExecError>;
 
-pub(crate) trait TargetStore {
-    fn new(cfgs: Vec<DesugaredTargetCfg>) -> ParseResult<Self>
+pub(crate) trait TargetStore<'a> {
+    fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self>
     where
         Self: Sized;
     fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>>;
@@ -211,13 +214,95 @@ pub type NodeIdx = NodeIndex<IdxT>;
 pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 struct TrieDagStore<'a> {
-    trie: ShortcutTrie,
+    shortcuts: ShortcutTrie,
     dag: Dag<Target<'a>, IdxT>,
 }
 
-impl<'a> TargetStore for TrieDagStore<'a> {
-    fn new(cfgs: Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
-        todo!()
+impl<'a> TargetStore<'a> for TrieDagStore<'a> {
+    fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
+        let mut dag: Dag<Target, IdxT> = Dag::new();
+        let mut deps: Vec<(&str, &str)> = Vec::new();
+        let mut node_idxes: HashMap<&str, NodeIdx> = HashMap::new();
+        let mut trie: ShortcutTrie = SequenceTrie::new();
+
+        // Discover all targets & add them as nodes to the DAG, and record their dependencies.
+        // While we are doing this, we can also add the long and short names to their respective tries.
+        for target_cfg in targets {
+            validate_target_cfg(target_cfg, &node_idxes)?;
+
+            let target = Target::from(target_cfg);
+            // NOTE: I don't remember why, but I recall finding that
+            // this .clone() is mostly necessary if we want to avoid
+            // losing readability. Also possible is of course that I'm
+            // not good enough at rust to see how to avoid it.
+            let target_shortcut = target.shortcut.clone();
+
+            // Keep track of the dep links. Once all the targets have
+            // been visited, we can then wire up their edges in the
+            // DAG. We must do this separately because at the time of
+            // visiting, we cannot guarantee that the target this
+            // target is depending on has been visited yet.
+            for dep in &target_cfg.deps {
+                deps.push((target.name, dep));
+            }
+
+            // Add this target as a node to the DAG.
+            let node_idx = dag.add_node(target);
+
+            // And add it to the trie under its shortcut.
+            // A natural question to ask here is about conflicts
+            // of shortcuts. For example, if two targets both have
+            // the shortcut `t-a`, how can we disambiguate them? The
+            // approach we take here is actually laziness. The
+            // trie actually maps `t-a` to _two_ different targets
+            // in this case, and the idea is that at 'runtime',
+            // when the user has keyed in `t-a`, we will detect a
+            // vector of length > 1, and _at that time_ we will
+            // find their common prefix and use the remaining
+            // characters (or '.') to disambiguate. This is
+            // actually going to be more efficient, because doing
+            // the reconciliation here pays the cost on _every_
+            // jam startup, but the lazy approach only does it if
+            // the user is going to use an ambiguous shortcut, which
+            // may only be for very rare targets!
+            if let Some(idxes) = trie.get_mut(target_shortcut.iter()) {
+                idxes.push(node_idx);
+            } else {
+                trie.insert(target_shortcut.iter(), vec![node_idx]);
+            }
+
+            // And at last, record the mapping of target name to
+            // its node index.
+            node_idxes.insert(&target_cfg.name, node_idx);
+        }
+
+        // With their dependencies recorded, now add edges to the DAG
+        // to represent them.
+        // While doing this, we will catch cases where the dep isn't
+        // recorded in our node index map, which means it doesn't
+        // exist, as well as cases where adding the dep to the DAG
+        // triggers a cycle.
+        for dep in &deps {
+            let dependee_idx = node_idxes
+                .get(dep.0)
+                .ok_or(anyhow!("reference to nonexistent dep: {}", dep.0))?;
+            let dependent_idx = node_idxes
+                .get(dep.1)
+                .ok_or(anyhow!("reference to nonexistent dep: {}", dep.1))?;
+            dag.add_edge(*dependee_idx, *dependent_idx, 0)
+                .map_err(|_| anyhow!("'{}' -> '{}' creates a cycle", dep.0, dep.1))?;
+            debug!(logger, "linked dependency"; o!("from" => dep.0, "to" => dep.1));
+        }
+
+        debug!(logger, "finished initializing structures"; o!("num_targets" => node_idxes.len(), "dep_links" => deps.len()));
+
+        Ok(TrieDagStore {
+            // NOTE: If we ever end up having a distinction between
+            // config-time options vs. run-time options, we may want
+            // to create a separate type here for isolation.
+            dag,
+            shortcuts: trie,
+        })
     }
 
     fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>> {
@@ -239,4 +324,23 @@ impl<'a> TargetStore for TrieDagStore<'a> {
     fn execute_by_name(&self, name: &str) -> ExecResult<()> {
         todo!()
     }
+}
+
+pub fn validate_target_cfg(
+    cfg: &DesugaredTargetCfg,
+    node_idxes: &HashMap<&str, NodeIdx>,
+) -> ParseResult<()> {
+    if cfg.name.is_empty() {
+        bail!("cannot have an empty target name")
+    } else if cfg.name.contains('.') {
+        bail!("cannot have a '.' in a target name: '{}'", cfg.name)
+    } else if cfg.name.contains('?') {
+        bail!("cannot have a '?' in a target name: '{}'", cfg.name)
+    } else if node_idxes.contains_key(&cfg.name as &str) {
+        bail!("duplicate target name: '{}'", cfg.name)
+    } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
+        bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
+    }
+
+    Ok(())
 }

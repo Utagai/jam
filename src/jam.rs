@@ -10,8 +10,8 @@ use crate::{
     executor::Executor,
     reconciler::reconcile,
     store::{
-        ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, ParseResult, Shortcut, ShortcutTrie,
-        Target,
+        validate_target_cfg, ExecError, ExecResult, IdxT, Lookup, NextKey, NodeIdx, ParseResult,
+        Shortcut, ShortcutTrie, Target,
     },
 };
 
@@ -410,25 +410,6 @@ impl<'a> Jam<'a> {
             }),
         }
     }
-}
-
-fn validate_target_cfg(
-    cfg: &DesugaredTargetCfg,
-    node_idxes: &HashMap<&str, NodeIdx>,
-) -> ParseResult<()> {
-    if cfg.name.is_empty() {
-        bail!("cannot have an empty target name")
-    } else if cfg.name.contains('.') {
-        bail!("cannot have a '.' in a target name: '{}'", cfg.name)
-    } else if cfg.name.contains('?') {
-        bail!("cannot have a '?' in a target name: '{}'", cfg.name)
-    } else if node_idxes.contains_key(&cfg.name as &str) {
-        bail!("duplicate target name: '{}'", cfg.name)
-    } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
-        bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
