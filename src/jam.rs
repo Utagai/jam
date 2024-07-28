@@ -4,15 +4,15 @@ use crate::{
     config::{DesugaredConfig, Options},
     executor::Executor,
     store::{
-        ExecError, ExecResult, Lookup, NextKey, ParseResult, Shortcut, Target, TargetStore,
-        TrieDagStore,
+        ExecError, ExecResult, Lookup, NextKey, ParseResult, Shortcut, SimpleStore, Target,
+        TargetStore,
     },
 };
 
 pub struct Jam<'a> {
     opts: &'a Options,
     executor: Executor,
-    target_store: TrieDagStore<'a>,
+    target_store: SimpleStore<'a>,
     logger: slog::Logger,
 }
 
@@ -28,7 +28,7 @@ impl<'a> Jam<'a> {
             // to create a separate type here for isolation.
             opts: &cfg.options,
             executor,
-            target_store: TrieDagStore::new(logger, &cfg.targets)?,
+            target_store: SimpleStore::new(logger, &cfg.targets)?,
             logger: logger.new(o!()),
         })
     }

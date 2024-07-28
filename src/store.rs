@@ -2,7 +2,11 @@ use anyhow::{anyhow, bail};
 use daggy::{Dag, NodeIndex, Walker};
 use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
-use std::{collections::HashMap, slice::Iter};
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    slice::Iter,
+};
 use thiserror::Error;
 
 use crate::{
@@ -84,6 +88,12 @@ impl Shortcut {
 
     pub fn iter(&self) -> Iter<'_, char> {
         self.0.iter()
+    }
+}
+
+impl Hash for Shortcut {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
     }
 }
 
@@ -186,6 +196,7 @@ pub type ParseResult<T> = anyhow::Result<T, anyhow::Error>;
 // TODO: Maybe we just move all of this to jam.rs? The key value-add of the work is to just decouple the store implementation from the parsing/execution implementaiton (i.e. jam).
 pub type ExecResult<T> = Result<T, ExecError>;
 
+// TODO: Add doc comments for each method.
 pub(crate) trait TargetStore<'a> {
     fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self>
     where
@@ -201,6 +212,313 @@ pub(crate) trait TargetStore<'a> {
     // conflict to reconcile.
     fn get_by_target_name(&self, target_name: &str) -> ExecResult<&Target>;
     fn children(&self, target: &Target) -> ExecResult<Vec<&Target>>;
+}
+
+pub struct SimpleStore<'a> {
+    shortcut_to_targets: HashMap<Shortcut, Vec<Target<'a>>>,
+    deps: HashMap<&'a str, &'a Vec<String>>,
+    logger: slog::Logger,
+}
+
+impl<'a> TargetStore<'a> for SimpleStore<'a> {
+    fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
+        let mut hm: HashMap<Shortcut, Vec<Target>> = HashMap::new();
+        let mut deps: HashMap<&str, &Vec<String>> = HashMap::new();
+        for target_cfg in targets {
+            let target = Target::from(target_cfg);
+            let shortcut = Shortcut::from_shortcut_str(&target_cfg.shortcut_str);
+            deps.insert(target.name, &target_cfg.deps);
+            if let Some(targets) = hm.get_mut(&shortcut) {
+                targets.push(target);
+            } else {
+                hm.insert(shortcut, vec![target]);
+            }
+        }
+
+        Ok(SimpleStore {
+            shortcut_to_targets: hm,
+            deps,
+            logger: logger.new(o!()),
+        })
+    }
+
+    // TODO: A lot of impls in the simple look very similar to the non-simple. This is a chance to maybe further crystallize the logic here.
+    fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>> {
+        let mut mappings: Vec<(Shortcut, &str)> = self
+            .shortcut_to_targets
+            .iter()
+            .map(|(shortcut, targets)| -> ExecResult<Vec<(Shortcut, &str)>> {
+                let shortcut = Shortcut::from(shortcut);
+                if let Some(target) = targets.first() {
+                    return Ok(vec![(shortcut, target.name)]);
+                }
+
+                // If there are multiple though, we should reconcile and return
+                // the shortcuts with the reconciled character added.
+                let reconciliation_chars = self.reconcile(strategy, &shortcut, &targets)?;
+                reconciliation_chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| Ok((shortcut.append(c), targets[i].name)))
+                    .collect()
+            })
+            .collect::<ExecResult<Vec<Vec<(Shortcut, &str)>>>>()?
+            .into_iter()
+            .flatten() // Flattens the Vec<Vec<...>> into Vec<...>.
+            .collect();
+
+        // Sort so that the return value is deterministic.
+        mappings.sort();
+        Ok(mappings)
+    }
+
+    fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>> {
+        if let Some(strategy) = strategy {
+            return self.next_conflict(strategy, prefix);
+        } else {
+            return self.next_no_conflict(prefix);
+        }
+    }
+
+    fn lookup(&self, strategy: Option<Strategy>, shortcut: &Shortcut) -> Lookup {
+        if let Some(strategy) = strategy {
+            match self.resolve_shortcut(strategy, shortcut) {
+                Ok(targets) => {
+                    if targets.is_empty() {
+                        Lookup::NotFound
+                    } else if targets.len() == 1 {
+                        Lookup::Found
+                    } else {
+                        // Multiple.
+                        Lookup::Conflict
+                    }
+                }
+                Err(ExecError::Conflict { .. }) => Lookup::Conflict, // NOTE: This doesn't ever happen, it's here just in case.
+                Err(ExecError::Reconciliation { description }) => {
+                    Lookup::ReconciliationFailure(description)
+                }
+                Err(_) => Lookup::NotFound,
+            }
+        } else {
+            if let Some(targets) = self.shortcut_to_targets.get(shortcut) {
+                if targets.len() == 1 {
+                    Lookup::Found
+                } else {
+                    Lookup::Conflict
+                }
+            } else {
+                Lookup::NotFound
+            }
+        }
+    }
+
+    fn get_by_shortcut(&self, strategy: Strategy, shortcut: Shortcut) -> ExecResult<&Target> {
+        let targets = self.resolve_shortcut(strategy, &shortcut)?;
+        if targets.len() > 1 {
+            return Err(ExecError::Conflict {
+                shortcut,
+                conflict_msg: targets
+                    .iter()
+                    .map(|target| format!("'{}'", target.name))
+                    .collect::<Vec<String>>()
+                    .join(" or "),
+            });
+        }
+        if let Some(target) = targets.first() {
+            return Ok(target);
+        } else {
+            Err(ExecError::ShortcutNotFound { shortcut })
+        }
+    }
+
+    fn get_by_target_name(&self, target_name: &str) -> ExecResult<&Target> {
+        let target = self
+            .shortcut_to_targets
+            .values()
+            .flatten()
+            .find(|target| target.name == target_name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target_name.to_string(),
+            })?;
+        return Ok(target);
+    }
+
+    fn children(&self, target: &Target) -> ExecResult<Vec<&Target>> {
+        let target = self
+            .shortcut_to_targets
+            .values()
+            .flatten()
+            .find(|t| t.name == target.name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target.name.to_string(),
+            })?;
+        let dep_names = self
+            .deps
+            .get(target.name)
+            .ok_or(ExecError::TargetNotFound {
+                target_name: target.name.to_string(),
+            })?;
+
+        Ok(self
+            .shortcut_to_targets
+            .values()
+            .flatten()
+            .filter(|target| dep_names.iter().any(|dep_name| target.name == dep_name))
+            .collect())
+    }
+}
+
+impl<'a> SimpleStore<'a> {
+    fn resolve_shortcut(
+        &self,
+        strategy: Strategy,
+        shortcut: &Shortcut,
+    ) -> ExecResult<Vec<&Target>> {
+        let resolved_targets;
+        match self.shortcut_to_targets.get(shortcut) {
+            Some(targets) => resolved_targets = targets.iter().collect(),
+            None => {
+                debug!(
+                    self.logger,
+                    "found potential reconciliation character, attempting reconciliation"
+                );
+                // In this case, it is possible that the user has
+                // actually specified a reconciliation character,
+                // which won't exist in the trie until we
+                // reconcile. So let's do that.
+                let (tail, key) = shortcut.tail();
+                // To see if this is correct, first, we expect the tail to exist:
+                match self.shortcut_to_targets.get(&tail) {
+                    Some(targets) => {
+                        // Secondly, not only must it exist, but it
+                        // must be referring to a shortcut that has
+                        // conflicts. If it has none, then the user
+                        // should just specify the tail.
+                        if targets.len() <= 1 {
+                            return Err(ExecError::ShortcutNotFound {
+                                shortcut: Shortcut::from(shortcut),
+                            });
+                        }
+
+                        info!(self.logger, "reconciling with strategy"; o!("strategy" => strategy.to_string()));
+
+                        // If it does indeed have a conflict,
+                        // then let's make sure that the specified
+                        // reconciliation key is a valid one:
+                        let reconciliation_keys = self.reconcile(strategy, &tail, targets)?;
+
+                        // The returned reconciliation keys are 1:1
+                        // with the node indexes. i.e., the
+                        // reconciliation key at index i is the
+                        // reconciliation key for the conflicting
+                        // target at index i in nidxes.
+                        let target = match reconciliation_keys
+                            .iter()
+                            .position(|reconciliation_key| Some(reconciliation_key) == key.as_ref())
+                        {
+                            // If it isn't there, then this reconciliation
+                            // key is not a good one and we should error.
+                            None => {
+                                return Err(ExecError::ShortcutNotFound {
+                                    shortcut: Shortcut::from(shortcut),
+                                });
+                            }
+                            // However, and finally, if it is good, then
+                            // let's identify which nidx we are looking at
+                            // and return just that one:
+                            Some(pos) => &targets[pos],
+                        };
+
+                        debug!(self.logger, "reconciled");
+                        resolved_targets = vec![target];
+                    }
+                    None => {
+                        return Err(ExecError::ShortcutNotFound {
+                            shortcut: Shortcut::from(shortcut),
+                        });
+                    }
+                }
+            }
+        };
+        Ok(resolved_targets)
+    }
+
+    fn reconcile(
+        &self,
+        strategy: Strategy,
+        shortcut: &Shortcut,
+        conflicts: &[Target],
+    ) -> ExecResult<Vec<char>> {
+        match reconcile(
+            strategy,
+            self,
+            &conflicts
+                .iter()
+                .map(|conflict| conflict.name)
+                .collect::<Vec<&str>>(),
+            shortcut,
+        ) {
+            Ok(keys) => Ok(keys),
+            Err(err) => Err(ExecError::Reconciliation {
+                description: err.to_string(),
+            }),
+        }
+    }
+
+    fn next_conflict(&self, strategy: Strategy, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
+        let targets = self
+            .shortcut_to_targets
+            .get(prefix)
+            .ok_or(ExecError::ShortcutNotFound {
+                shortcut: prefix.clone(),
+            })?;
+        self.reconcile(strategy, prefix, targets).and_then(|keys| {
+            keys.into_iter()
+                .map(|key| {
+                    self.resolve_shortcut(strategy, &prefix.append(&key))
+                        .map(|targets| {
+                            NextKey::new(key, targets.iter().map(|target| target.name).collect())
+                        })
+                })
+                .collect::<ExecResult<Vec<NextKey>>>()
+        })
+    }
+
+    fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
+        if !self.shortcut_to_targets.contains_key(prefix) {
+            return Ok(vec![]);
+        }
+
+        let mut keys_to_names: Vec<NextKey> = self
+            .shortcut_to_targets
+            .iter()
+            .filter_map(|(shortcut, targets)| {
+                if shortcut.0.starts_with(&prefix.0) {
+                    let key = shortcut.0.get(prefix.0.len());
+                    if let Some(key) = key {
+                        if targets.len() == 1 {
+                            return Some(NextKey::new(*key, vec![targets[0].name]));
+                        }
+                        return Some(NextKey::new(*key, vec![]));
+                    }
+                }
+                None
+            })
+            .collect();
+        // Because the keys we return are individual _characters_ of
+        // _full_ sequences, it is possible to return duplicates
+        // here. For example, consider the following shortcuts to
+        // exist:
+        //   a
+        //   ab
+        // The first call with the prefix being the empty shortcut will
+        // return [a,a] unless we de-dupe things.
+        keys_to_names.sort_by(|a, b| a.key().cmp(&b.key()));
+        keys_to_names.dedup_by(|a, b| a.key() == b.key());
+
+        // Now return the keys, mapped to their next target names.
+        Ok(keys_to_names)
+    }
 }
 
 type IdxT = u32;
@@ -616,7 +934,7 @@ impl<'a> TrieDagStore<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::TrieDagStore;
+    use super::{SimpleStore, TrieDagStore};
     use crate::config::DesugaredConfig;
     use crate::store::{NodeIdx, Target, TargetStore};
     use crate::testutils::logger;

@@ -134,7 +134,7 @@ pub fn reconcile(
 
 #[cfg(test)]
 mod tests {
-    use crate::testutils::logger;
+    use crate::{store::SimpleStore, testutils::logger};
 
     use super::*;
 
@@ -166,7 +166,7 @@ mod tests {
     #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
         let targets = vec![];
-        let target_store = TrieDagStore::new(&logger::test(), &targets)
+        let target_store = SimpleStore::new(&logger::test(), &targets)
             .expect("failed to create test target store");
         let res = FIRST_NONMATCH(&target_store, &conflicts, &shortcut);
         assert_eq!(
@@ -183,7 +183,7 @@ mod tests {
     #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
         let targets = vec![];
-        let target_store = TrieDagStore::new(&logger::test(), &targets)
+        let target_store = SimpleStore::new(&logger::test(), &targets)
             .expect("failed to create test target store");
         let res = FIRST_NONMATCH(&target_store, &conflicts, &shortcut);
         assert_eq!(
