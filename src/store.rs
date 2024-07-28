@@ -1,7 +1,10 @@
 use std::slice::Iter;
 use thiserror::Error;
 
-use crate::{config::DesugaredTargetCfg, executor::ExecuteKind};
+use crate::{
+    config::{DesugaredConfig, DesugaredTargetCfg},
+    executor::ExecuteKind,
+};
 
 // TODO: The fields here likely don't need to be pub eventually.
 pub struct Target<'a> {
@@ -174,6 +177,7 @@ pub enum ExecError {
 pub type ExecResult<T> = Result<T, ExecError>;
 
 pub(crate) trait TargetStore {
+    fn new(cfgs: Vec<DesugaredTargetCfg>) -> Self;
     fn mappings(&self) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, conflict: bool) -> ExecResult<Vec<NextKey>>;
