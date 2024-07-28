@@ -11,6 +11,8 @@ targets:
       - name: "dep bar"
         cmd: "gum spin --spinner pulse --title 'Building child component bar...' -- sleep 1"
   - name: "run"
-    cmd: "echo 'Yay, I just ran the command @ r!'"
+    cmd: |
+      echo 'Yay, I just ran the command @ r!'
+      echo "second command!"
   - name: "my cool command"
     cmd: "gum spin --spinner pulse --title 'Installing package...' -- sleep 1"
