@@ -193,7 +193,7 @@ pub(crate) trait TargetStore<'a> {
     fn mappings(&self, strategy: Strategy) -> ExecResult<Vec<(Shortcut, &str)>>;
     // TODO: Shoudl we keep this as "Exec" result?
     fn next(&self, prefix: &Shortcut, strategy: Option<Strategy>) -> ExecResult<Vec<NextKey>>;
-    fn lookup(&self, strategy: Strategy, shortcut: &Shortcut) -> Lookup;
+    fn lookup(&self, strategy: Option<Strategy>, shortcut: &Shortcut) -> Lookup;
     // TODO: Should be able to autoimplement a more ergonomic method?
     fn get_by_shortcut(&self, strategy: Strategy, shortcut: Shortcut) -> ExecResult<&Target>;
     // NOTE: get_by_target_name does not require a reconciliation strategy
@@ -214,9 +214,7 @@ type NodeIdx = NodeIndex<IdxT>;
 // can probably just dump everything into a vector and be more than fast enough.
 // NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
 // can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
-// TODO: This type should not be pub, but the reconciler is currently forcing us
-// to leak this implementation detail.
-pub type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
+type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
 
 pub struct TrieDagStore<'a> {
     shortcuts: ShortcutTrie,
@@ -349,23 +347,35 @@ impl<'a> TargetStore<'a> for TrieDagStore<'a> {
         }
     }
 
-    fn lookup(&self, strategy: Strategy, shortcut: &Shortcut) -> Lookup {
-        match self.resolve_shortcut(strategy, shortcut) {
-            Ok(idxes) => {
-                if idxes.is_empty() {
-                    Lookup::NotFound
-                } else if idxes.len() == 1 {
+    fn lookup(&self, strategy: Option<Strategy>, shortcut: &Shortcut) -> Lookup {
+        if let Some(strategy) = strategy {
+            match self.resolve_shortcut(strategy, shortcut) {
+                Ok(idxes) => {
+                    if idxes.is_empty() {
+                        Lookup::NotFound
+                    } else if idxes.len() == 1 {
+                        Lookup::Found
+                    } else {
+                        // Multiple.
+                        Lookup::Conflict
+                    }
+                }
+                Err(ExecError::Conflict { .. }) => Lookup::Conflict, // NOTE: This doesn't ever happen, it's here just in case.
+                Err(ExecError::Reconciliation { description }) => {
+                    Lookup::ReconciliationFailure(description)
+                }
+                Err(_) => Lookup::NotFound,
+            }
+        } else {
+            if let Some(nidxes) = self.shortcuts.get(shortcut.iter()) {
+                if nidxes.len() == 1 {
                     Lookup::Found
                 } else {
-                    // Multiple.
                     Lookup::Conflict
                 }
+            } else {
+                Lookup::NotFound
             }
-            Err(ExecError::Conflict { .. }) => Lookup::Conflict, // NOTE: This doesn't ever happen, it's here just in case.
-            Err(ExecError::Reconciliation { description }) => {
-                Lookup::ReconciliationFailure(description)
-            }
-            Err(_) => Lookup::NotFound,
         }
     }
 
@@ -446,7 +456,7 @@ impl<'a> TrieDagStore<'a> {
     ) -> ExecResult<Vec<char>> {
         match reconcile(
             strategy,
-            &self.shortcuts,
+            self,
             &conflicts
                 .iter()
                 .map(|nidx| self.dag[*nidx].name)

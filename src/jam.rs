@@ -12,7 +12,6 @@ use crate::{
 pub struct Jam<'a> {
     opts: &'a Options,
     executor: Executor,
-    // TODO: Should this be a dyn trait?
     target_store: TrieDagStore<'a>,
     logger: slog::Logger,
 }
@@ -64,7 +63,7 @@ impl<'a> Jam<'a> {
     /// that must be reconciled.
     pub fn lookup(&self, shortcut: &Shortcut) -> Lookup {
         self.target_store
-            .lookup(self.opts.reconciliation_strategy, shortcut)
+            .lookup(Some(self.opts.reconciliation_strategy), shortcut)
     }
 
     pub fn execute_by_shortcut(&self, shortcut: Shortcut) -> ExecResult<()> {
