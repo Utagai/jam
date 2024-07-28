@@ -485,7 +485,11 @@ impl<'a> SimpleStore<'a> {
     }
 
     fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
-        if !self.shortcut_to_targets.contains_key(prefix) {
+        if !self
+            .shortcut_to_targets
+            .keys()
+            .any(|key| key.0.starts_with(prefix.0.as_slice()))
+        {
             return Ok(vec![]);
         }
 
