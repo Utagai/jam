@@ -1,6 +1,4 @@
 use anyhow::{anyhow, bail};
-use daggy::{Dag, NodeIndex, Walker};
-use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
 use std::{
     cmp::Ordering,
@@ -215,6 +213,17 @@ pub(crate) trait TargetStore<'a> {
     fn children(&self, target: &Target) -> ExecResult<Vec<&Target>>;
 }
 
+// SimpleStore is a simple implementation of the TargetStore trait. It uses just
+// two hashmaps to accomplish what is needed for this application.
+// NOTE: In a prior version of this application, I used a Trie and a DAG to
+// store the targets and their dependencies. While this made sense from an
+// algorithms textbook perspective, I ended up finding the code substantially
+// uglier and harder to read, reason about and update. Furthermore, the choice
+// of using the right data structures was only really important in the pursuit
+// of efficiency. However, the number of targets that we are likely to have in a
+// jamfile is likely to be quite small, so the efficiency gains are likely to be
+// negligible. Therefore, I have opted for a simpler, more readable, and more
+// maintainable implementation.
 pub struct SimpleStore<'a> {
     // shortcut_to_targets is a map from a shortcut to a list of targets that
     // that the shortcut is mapped to. This is not considering reconciliation.
@@ -594,43 +603,11 @@ impl<'a> SimpleStore<'a> {
     }
 }
 
-type IdxT = u32;
-type NodeIdx = NodeIndex<IdxT>;
-// NOTE: I wonder if we actually really need a trie. I think the more general
-// N-ary tree would work just as well given how we use this trie. We're not
-// actually making good use of the strengths of a trie, I think. In either case,
-// it shouldn't really change much in the code, even in terms of complexity, so
-// I'm just going to keep it here until I find a good enough reason to refactor.
-// I mean really, for the sort of scales that this binary is executing at, we
-// can probably just dump everything into a vector and be more than fast enough.
-// NOTE: The value-type here is Vec<NodeIdx>. This is because a single shortcut
-// can lead to multiple targets if it is ambiguous (e.g. a partial prefix).
-type ShortcutTrie = SequenceTrie<char, Vec<NodeIdx>>;
-
-fn validate_target_cfg(
-    cfg: &DesugaredTargetCfg,
-    node_idxes: &HashMap<&str, NodeIdx>,
-) -> ParseResult<()> {
-    if cfg.name.is_empty() {
-        bail!("cannot have an empty target name")
-    } else if cfg.name.contains('.') {
-        bail!("cannot have a '.' in a target name: '{}'", cfg.name)
-    } else if cfg.name.contains('?') {
-        bail!("cannot have a '?' in a target name: '{}'", cfg.name)
-    } else if node_idxes.contains_key(&cfg.name as &str) {
-        bail!("duplicate target name: '{}'", cfg.name)
-    } else if cfg.deps.is_empty() && cfg.cmd.is_none() {
-        bail!("a command without an executable command must have dependencies or subtargets, but '{}' does not", cfg.name)
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::SimpleStore;
     use crate::config::DesugaredConfig;
-    use crate::store::{NodeIdx, Target, TargetStore};
+    use crate::store::{Target, TargetStore};
     use crate::testutils::logger;
 
     fn get_ts(cfg: &DesugaredConfig) -> SimpleStore {
@@ -659,7 +636,7 @@ mod tests {
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
                 self.deps.iter().any(|dep| {
-                    *dep.0 == dependee && dep.1.iter().any(|targetName| targetName == dependent)
+                    *dep.0 == dependee && dep.1.iter().any(|target_name| target_name == dependent)
                 })
             }
         }
