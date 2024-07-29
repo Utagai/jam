@@ -216,16 +216,30 @@ pub(crate) trait TargetStore<'a> {
 }
 
 pub struct SimpleStore<'a> {
+    // shortcut_to_targets is a map from a shortcut to a list of targets that
+    // that the shortcut is mapped to. This is not considering reconciliation.
     shortcut_to_targets: HashMap<Shortcut, Vec<Target<'a>>>,
+    // deps is a map from a target name to a list of target names that the
+    // target depends on.
     deps: HashMap<&'a str, &'a Vec<String>>,
     logger: slog::Logger,
 }
 
 impl<'a> TargetStore<'a> for SimpleStore<'a> {
-    fn new(logger: &slog::Logger, targets: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
+    fn new(logger: &slog::Logger, target_cfgs: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
         let mut hm: HashMap<Shortcut, Vec<Target>> = HashMap::new();
         let mut deps: HashMap<&str, &Vec<String>> = HashMap::new();
-        for target_cfg in targets {
+        for target_cfg in target_cfgs {
+            // Validate the cfgs while we are already here, looping over them.
+            if target_cfg.name.is_empty() {
+                return Err(anyhow!("cannot have an empty target name"));
+            } else if target_cfg.cmd.is_none() && target_cfg.deps.is_empty() {
+                return Err(anyhow!(
+                    "a command without an executable command must have dependencies or subtargets, but '{}' does not",
+                    target_cfg.name
+                ));
+            }
+
             let target = Target::from(target_cfg);
             let shortcut = Shortcut::from_shortcut_str(&target_cfg.shortcut_str);
             deps.insert(target.name, &target_cfg.deps);
@@ -233,6 +247,41 @@ impl<'a> TargetStore<'a> for SimpleStore<'a> {
                 targets.push(target);
             } else {
                 hm.insert(shortcut, vec![target]);
+            }
+        }
+
+        // We run the validations one more time in a separate loop. We can't do
+        // it in the above loop since we need to have all the targets in the
+        // hashmap before we can validate the deps.
+        let targets = hm.values().flatten().collect::<Vec<&Target>>();
+
+        // Validate targets
+        for target in &targets {
+            if target.name.contains('.') {
+                return Err(anyhow!(
+                    "cannot have a '.' in a target name: '{}'",
+                    target.name
+                ));
+            } else if target.name.contains('?') {
+                return Err(anyhow!(
+                    "cannot have a '?' in a target name: '{}'",
+                    target.name
+                ));
+            } else if targets.iter().filter(|t| t.name == target.name).count() > 1 {
+                return Err(anyhow!("duplicate target name: '{}'", target.name));
+            }
+        }
+
+        // Validate deps
+        for dep in &deps {
+            // Check if the dep exists:
+            if let Some(dep_name) = dep.1.iter().find(|dep_name| {
+                targets
+                    .iter()
+                    .find(|target| target.name == *dep_name)
+                    .is_none()
+            }) {
+                return Err(anyhow!("reference to nonexistent dep: {}", dep_name));
             }
         }
 
