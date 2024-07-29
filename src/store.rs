@@ -3,6 +3,7 @@ use daggy::{Dag, NodeIndex, Walker};
 use sequence_trie::SequenceTrie;
 use slog::{debug, info, o};
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     hash::{Hash, Hasher},
     slice::Iter,
@@ -488,7 +489,7 @@ impl<'a> SimpleStore<'a> {
         if !self
             .shortcut_to_targets
             .keys()
-            .any(|key| key.0.starts_with(prefix.0.as_slice()))
+            .any(|key| key.0.starts_with(&prefix.0))
         {
             return Ok(vec![]);
         }
@@ -497,13 +498,12 @@ impl<'a> SimpleStore<'a> {
             .shortcut_to_targets
             .iter()
             .filter_map(|(shortcut, targets)| {
-                if shortcut.0.starts_with(&prefix.0) {
+                if shortcut.0.starts_with(&prefix.0) && shortcut.0.len() <= prefix.0.len() + 2 {
                     let key = shortcut.0.get(prefix.0.len());
                     if let Some(key) = key {
-                        if targets.len() == 1 {
-                            return Some(NextKey::new(*key, vec![targets[0].name]));
-                        }
-                        return Some(NextKey::new(*key, vec![]));
+                        let tgts: Vec<&str> = targets.iter().map(|t| t.name).collect();
+                        info!(self.logger, "checking shortcut"; o!("shortcut" => format!("{}", shortcut), "prefix" => format!("{}", prefix), "key" => key, "tgts" => format!("{:?}", tgts.len())));
+                        return Some(NextKey::new(*key, tgts));
                     }
                 }
                 None
@@ -517,10 +517,30 @@ impl<'a> SimpleStore<'a> {
         //   ab
         // The first call with the prefix being the empty shortcut will
         // return [a,a] unless we de-dupe things.
-        keys_to_names.sort_by(|a, b| a.key().cmp(&b.key()));
+        // TODO: Update this comment. I'm not sure it is correct anymore, and
+        // even if it is, it is now a partial explanation since the comparison
+        // logic is more complex now.
+        // TODO: Or, and here's a crazy idea. Technically, without this extra
+        // crap, we won't show the '...' like we did before. However, arguably,
+        // what we had before was wrong. There wasn't actually a branch really,
+        // it was a single path it just wasn't a _leaf_. Could we introduce a
+        // new NextKey variant for this kind of node and render it specially?
+        keys_to_names.sort_by(|a, b| {
+            let cmp = a.key().cmp(&b.key());
+            if cmp == Ordering::Equal {
+                match (a, b) {
+                    (NextKey::BranchKey { .. }, NextKey::LeafKey { .. }) => Ordering::Less,
+                    (NextKey::LeafKey { .. }, NextKey::BranchKey { .. }) => Ordering::Greater,
+                    _ => Ordering::Equal,
+                }
+            } else {
+                cmp
+            }
+        });
         keys_to_names.dedup_by(|a, b| a.key() == b.key());
 
         // Now return the keys, mapped to their next target names.
+        info!(self.logger, "returning next keys"; o!("keys" => format!("{:?}", keys_to_names.len())));
         Ok(keys_to_names)
     }
 }
