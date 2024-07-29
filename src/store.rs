@@ -963,8 +963,8 @@ mod tests {
     use crate::store::{NodeIdx, Target, TargetStore};
     use crate::testutils::logger;
 
-    fn get_ts(cfg: &DesugaredConfig) -> TrieDagStore {
-        TrieDagStore::new(&logger::test(), &cfg.targets).expect("expected no errors from parsing")
+    fn get_ts(cfg: &DesugaredConfig) -> SimpleStore {
+        SimpleStore::new(&logger::test(), &cfg.targets).expect("expected no errors from parsing")
     }
 
     mod parse {
@@ -975,20 +975,12 @@ mod tests {
         use crate::log::Level;
 
         // TODO: This should probably test across all impls at once?
-        impl<'a> TrieDagStore<'a> {
-            fn node_has_target(&self, target_name: &str) -> Option<NodeIdx> {
-                self.shortcuts
-                    .iter()
-                    .flat_map(|kv| kv.1.clone())
-                    .find(|nidx| self.dag[*nidx].name == target_name)
-            }
-
+        impl<'a> SimpleStore<'a> {
             fn get_target_by_name(&self, target_name: &str) -> Option<&Target> {
-                self.shortcuts
-                    .iter()
-                    .flat_map(|kv| kv.1.clone())
-                    .map(|nidx| &self.dag[nidx])
-                    .find(|target| target.name == target_name)
+                self.shortcut_to_targets
+                    .values()
+                    .find(|targets| targets.iter().any(|target| target.name == target_name))
+                    .and_then(|targets| targets.iter().find(|target| target.name == target_name))
             }
 
             fn has_target(&self, target_name: &str) -> bool {
@@ -996,18 +988,9 @@ mod tests {
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
-                let depender_idx = self.node_has_target(dependee);
-                let dependent_idx = self.node_has_target(dependent);
-                if match depender_idx.zip(dependent_idx) {
-                    Some((depender_idx, dependent_idx)) => {
-                        self.dag.find_edge(depender_idx, dependent_idx).is_some()
-                    }
-                    None => false,
-                } {
-                    return true;
-                }
-
-                false
+                self.deps.iter().any(|dep| {
+                    *dep.0 == dependee && dep.1.iter().any(|targetName| targetName == dependent)
+                })
             }
         }
 
@@ -1028,7 +1011,7 @@ mod tests {
             }
         }
 
-        fn verify_ts_dag(ts: TrieDagStore, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
+        fn verify_ts_dag(ts: SimpleStore, targets: &Vec<&str>, deps: &Vec<(&str, &str)>) {
             for target in targets {
                 assert!(ts.has_target(target));
             }
@@ -1037,8 +1020,15 @@ mod tests {
                 assert!(ts.has_dep(dep.0, dep.1));
             }
 
-            assert_eq!(ts.dag.node_count(), targets.len());
-            assert_eq!(ts.dag.edge_count(), deps.len());
+            let num_total_deps: usize = ts.deps.iter().map(|(_, deps)| deps.len()).sum();
+            let num_total_targets: usize = ts
+                .shortcut_to_targets
+                .iter()
+                .map(|(_, nidxes)| nidxes.len())
+                .sum();
+
+            assert_eq!(num_total_deps, deps.len());
+            assert_eq!(num_total_targets, targets.len());
         }
 
         mod nodeps {
