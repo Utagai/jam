@@ -138,7 +138,6 @@ mod tests {
 
     use super::*;
 
-    use crate::store::TrieDagStore;
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
