@@ -1,8 +1,8 @@
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use slog::{debug, info, o};
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap, HashSet},
     hash::{Hash, Hasher},
     slice::Iter,
 };
@@ -222,22 +222,27 @@ pub(crate) trait TargetStore<'a> {
 // of using the right data structures was only really important in the pursuit
 // of efficiency. However, the number of targets that we are likely to have in a
 // jamfile is likely to be quite small, so the efficiency gains are likely to be
-// negligible. Therefore, I have opted for a simpler, more readable, and more
-// maintainable implementation.
+// negligible. Furthermore, in many cases, the efficiency gains from certain
+// operations on a true Trie/Dag will not even be realized in the execution of
+// this program. For example, in interactive TUI mode, we often iterate
+// substantial portions of the Trie regardless. Therefore, I have opted for a
+// simpler, more readable, and more maintainable implementation.
 pub struct SimpleStore<'a> {
     // shortcut_to_targets is a map from a shortcut to a list of targets that
     // that the shortcut is mapped to. This is not considering reconciliation.
     shortcut_to_targets: HashMap<Shortcut, Vec<Target<'a>>>,
     // deps is a map from a target name to a list of target names that the
     // target depends on.
-    deps: HashMap<&'a str, &'a Vec<String>>,
+    // NOTE: We use a BTreeMap so that iteration over this map is always
+    // deterministic.
+    dag: BTreeMap<&'a str, &'a Vec<String>>,
     logger: slog::Logger,
 }
 
 impl<'a> TargetStore<'a> for SimpleStore<'a> {
     fn new(logger: &slog::Logger, target_cfgs: &'a Vec<DesugaredTargetCfg>) -> ParseResult<Self> {
         let mut hm: HashMap<Shortcut, Vec<Target>> = HashMap::new();
-        let mut deps: HashMap<&str, &Vec<String>> = HashMap::new();
+        let mut deps: BTreeMap<&str, &Vec<String>> = BTreeMap::new();
         for target_cfg in target_cfgs {
             // Validate the cfgs while we are already here, looping over them.
             if target_cfg.name.is_empty() {
@@ -294,9 +299,21 @@ impl<'a> TargetStore<'a> for SimpleStore<'a> {
             }
         }
 
+        // Cycle detection:
+        if let Some(cycle) = detect_cycle(&deps) {
+            return Err(anyhow!(
+                "found a cycle: {}",
+                cycle
+                    .iter()
+                    .map(|node| format!("'{}'", node))
+                    .intersperse(String::from("->"))
+                    .collect::<String>()
+            ));
+        }
+
         Ok(SimpleStore {
             shortcut_to_targets: hm,
-            deps,
+            dag: deps,
             logger: logger.new(o!()),
         })
     }
@@ -411,12 +428,9 @@ impl<'a> TargetStore<'a> for SimpleStore<'a> {
             .ok_or(ExecError::TargetNotFound {
                 target_name: target.name.to_string(),
             })?;
-        let dep_names = self
-            .deps
-            .get(target.name)
-            .ok_or(ExecError::TargetNotFound {
-                target_name: target.name.to_string(),
-            })?;
+        let dep_names = self.dag.get(target.name).ok_or(ExecError::TargetNotFound {
+            target_name: target.name.to_string(),
+        })?;
 
         Ok(self
             .shortcut_to_targets
@@ -603,15 +617,198 @@ impl<'a> SimpleStore<'a> {
     }
 }
 
+fn detect_cycle<'a, T>(dag: &'a BTreeMap<&'a str, T>) -> Option<Vec<&'a str>>
+where
+    T: AsRef<[String]>,
+{
+    let mut visited: HashSet<&str> = HashSet::with_capacity(dag.len());
+
+    // Iterate through all the "nodes".
+    for og_node in dag {
+        if visited.contains(og_node.0) {
+            continue;
+        }
+
+        let maybe_cycle = visit(dag, &mut visited, og_node.0);
+        if maybe_cycle.is_some() {
+            return maybe_cycle;
+        }
+
+        // If we get here, we exhausted all the paths from this node and found
+        // no cycles. Loop around again until we find an unvisited node and
+        // repeat the process.
+    }
+
+    None
+}
+
+fn visit<'a, T>(
+    dag: &'a BTreeMap<&'a str, T>,
+    global_visited: &mut HashSet<&'a str>,
+    node: &'a str,
+) -> Option<Vec<&'a str>>
+where
+    T: AsRef<[String]>,
+{
+    let mut local_visited: HashSet<&str> = HashSet::with_capacity(dag.len());
+    _visit(dag, global_visited, &mut local_visited, node)
+}
+
+fn _visit<'a, T>(
+    dag: &'a BTreeMap<&'a str, T>,
+    global_visited: &mut HashSet<&'a str>,
+    local_visited: &mut HashSet<&'a str>,
+    node: &'a str,
+) -> Option<Vec<&'a str>>
+where
+    T: AsRef<[String]>,
+{
+    if local_visited.contains(node) {
+        return Some(vec![node]);
+    }
+    local_visited.insert(node);
+    global_visited.insert(node);
+
+    let node_deps = dag.get(&node).expect("unreachable");
+    for dep in node_deps.as_ref() {
+        if let Some(mut cycle) = _visit(dag, global_visited, local_visited, dep) {
+            cycle.push(node);
+            return Some(cycle);
+        }
+    }
+
+    local_visited.remove(node);
+    return None;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SimpleStore;
+    use super::{detect_cycle, SimpleStore};
     use crate::config::DesugaredConfig;
     use crate::store::{Target, TargetStore};
     use crate::testutils::logger;
 
     fn get_ts(cfg: &DesugaredConfig) -> SimpleStore {
         SimpleStore::new(&logger::test(), &cfg.targets).expect("expected no errors from parsing")
+    }
+
+    mod cycle_detection {
+        use super::*;
+        use std::collections::BTreeMap;
+
+        #[test]
+        fn test_no_cycle_in_empty_graph() {
+            let dag: BTreeMap<&str, &Vec<String>> = BTreeMap::new();
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_single_node_no_cycle() {
+            // A
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", Vec::new());
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_two_nodes_no_cycle() {
+            // A --> B
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", Vec::new());
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_three_nodes_no_cycle() {
+            // A --> B --> C
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", vec!["C".to_string()]);
+            dag.insert("C", Vec::new());
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_two_nodes_with_cycle() {
+            // A──►B
+            // ▲   │
+            // └───┘
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", vec!["A".to_string()]);
+            assert!(detect_cycle(&dag).is_some());
+        }
+
+        #[test]
+        fn test_three_nodes_with_cycle() {
+            // A --> B --> C
+            // ^           |
+            // |-----------|
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", vec!["C".to_string()]);
+            dag.insert("C", vec!["A".to_string()]);
+            assert!(detect_cycle(&dag).is_some());
+        }
+
+        #[test]
+        fn test_complex_graph_with_cycle() {
+            // A───►B──►D──►F
+            // │    ▲   │
+            // ▼    │   │
+            // C───►E◄──┘
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string(), "C".to_string()]);
+            dag.insert("B", vec!["D".to_string()]);
+            dag.insert("C", vec!["E".to_string()]);
+            dag.insert("D", vec!["E".to_string(), "F".to_string()]);
+            dag.insert("E", vec!["B".to_string()]);
+            dag.insert("F", Vec::new());
+            assert!(detect_cycle(&dag).is_some());
+        }
+
+        #[test]
+        fn test_complex_graph_no_cycle() {
+            // A───►B──►D──►F
+            // │        │
+            // ▼        │
+            // C───►E◄──┘
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string(), "C".to_string()]);
+            dag.insert("B", vec!["D".to_string()]);
+            dag.insert("C", vec!["E".to_string()]);
+            dag.insert("D", vec!["E".to_string(), "F".to_string()]);
+            dag.insert("E", Vec::new());
+            dag.insert("F", Vec::new());
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_disconnected_graph_no_cycle() {
+            // A───►B
+            //
+            // C───►D
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", Vec::new());
+            dag.insert("C", vec!["D".to_string()]);
+            dag.insert("D", Vec::new());
+            assert_eq!(detect_cycle(&dag), None);
+        }
+
+        #[test]
+        fn test_disconnected_graph_with_cycle() {
+            // A───►B
+            //
+            // C◄──►D
+            let mut dag: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            dag.insert("A", vec!["B".to_string()]);
+            dag.insert("B", Vec::new());
+            dag.insert("C", vec!["D".to_string()]);
+            dag.insert("D", vec!["C".to_string()]);
+            assert!(detect_cycle(&dag).is_some());
+        }
     }
 
     mod parse {
@@ -635,7 +832,7 @@ mod tests {
             }
 
             fn has_dep(&self, dependee: &str, dependent: &str) -> bool {
-                self.deps.iter().any(|dep| {
+                self.dag.iter().any(|dep| {
                     *dep.0 == dependee && dep.1.iter().any(|target_name| target_name == dependent)
                 })
             }
@@ -667,7 +864,7 @@ mod tests {
                 assert!(ts.has_dep(dep.0, dep.1));
             }
 
-            let num_total_deps: usize = ts.deps.iter().map(|(_, deps)| deps.len()).sum();
+            let num_total_deps: usize = ts.dag.iter().map(|(_, deps)| deps.len()).sum();
             let num_total_targets: usize = ts
                 .shortcut_to_targets
                 .iter()
@@ -826,7 +1023,7 @@ mod tests {
                         target::dep("baz", vec!["foo"]),
                         target::dep("foo", vec!["baz"]),
                     ],
-                    "'foo' -> 'baz' creates a cycle",
+                    "found a cycle: 'baz'->'foo'->'baz'",
                 );
             }
 
@@ -839,7 +1036,7 @@ mod tests {
                         target::dep("corge", vec!["quux"]),
                         target::dep("quux", vec!["baz"]),
                     ],
-                    "'quux' -> 'baz' creates a cycle",
+                    "found a cycle: 'baz'->'quux'->'corge'->'foo'->'baz'",
                 );
             }
 
