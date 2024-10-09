@@ -39,28 +39,23 @@ struct Cli {
     #[clap(long)]
     log_path: Option<String>,
 
-    #[clap(long, conflicts_with = "exec_arg", default_value_t = false)]
+    #[clap(long, conflicts_with_all(["target_to_exec", "shortcut"]), default_value_t = false)]
     dump_mappings: bool,
 
     #[clap(short, long)]
     config_file: Option<String>,
 
-    /// First execution argument. If using a shortcut, this is just the first character. Otherwise, it's the name of the target to execute.
-    exec_arg: Option<String>,
+    /// A target name to execute directly. Overrides other execution modes.
+    #[clap(short, long)]
+    target_to_exec: Option<String>,
 
-    /// Individual keys that together (with EXEC_ARG) give a shortcut, uniquely identifying a jam command to execute.
-    shortcut: Vec<char>,
+    /// A series of characters that map to a shortcut sequence, leading to a target to execute.
+    shortcut: Option<String>,
 }
 
 impl KV for Cli {
     fn serialize(&self, _: &Record, serializer: &mut dyn slog::Serializer) -> slog::Result {
         serializer.emit_bool("dry_run", self.dry_run)?;
-        serializer.emit_str(
-            "shortcut",
-            // NOTE: I think this causes an allocation, and I feel like theoretically it may not be necessary.
-            // But I also don't think there's use in prematurely optimizing something like this.
-            &self.shortcut.iter().intersperse(&'-').collect::<String>(),
-        )?;
         match self.log_level {
             Some(log_level) => serializer.emit_str("log_level", &log_level.to_string()),
             _ => Ok(()),
@@ -123,15 +118,13 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if let Some(ref target_name) = cli.exec_arg {
-        if target_name.len() > 1 {
-            jam.execute_by_target_name(&target_name)?;
-            return Ok(());
-        }
+    if let Some(ref target_name) = cli.target_to_exec {
+        jam.execute_by_target_name(&target_name)?;
+        return Ok(());
     }
 
-    let shortcut = if let Some(ref target_name) = cli.exec_arg {
-        Shortcut(cli.shortcut).prepend(&target_name.chars().next().unwrap())
+    let shortcut = if let Some(ref shortcut) = cli.shortcut {
+        Shortcut(shortcut.chars().collect())
     } else {
         tui::core::render(logger, &jam)?
     };
