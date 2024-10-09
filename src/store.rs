@@ -816,7 +816,7 @@ mod tests {
     mod parse {
         use super::*;
 
-        use crate::config::target;
+        use crate::config::{default_log_path, target};
         use crate::config::{Config, Options, TargetCfg};
         use crate::log::Level;
 
@@ -845,6 +845,7 @@ mod tests {
                 options: Options {
                     reconciliation_strategy: crate::reconciler::Strategy::Error,
                     log_level: Some(Level::Disabled),
+                    log_path: default_log_path(),
                 },
                 imports: Some(vec![]),
                 targets,

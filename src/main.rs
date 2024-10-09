@@ -36,6 +36,9 @@ struct Cli {
     #[clap(short, long, value_enum)]
     log_level: Option<log::Level>,
 
+    #[clap(long)]
+    log_path: Option<String>,
+
     #[clap(long, conflicts_with = "exec_arg", default_value_t = false)]
     dump_mappings: bool,
 
@@ -105,6 +108,7 @@ fn main() -> anyhow::Result<()> {
         cli.log_level
             .or(desugared_cfg.options.log_level)
             .unwrap_or(log::Level::Disabled),
+        cli.log_path.unwrap_or(String::from(log::DEFAULT_LOG_PATH)),
         config_path,
     );
     debug!(logger, "desugared config"; &desugared_cfg);
@@ -171,7 +175,6 @@ mod tests {
         // Test when a config file exists in a parent directory
         let parent_dir = current_dir.parent().unwrap().to_path_buf();
         let config_file = parent_dir.join("jam.yml");
-        eprintln!("created config file: {:?}", config_file);
         std::fs::write(&config_file, "").unwrap();
         assert_eq!(
             get_nearest_config_file(&current_dir).unwrap(),
