@@ -89,6 +89,7 @@ fn key_text<'a>(state: &'a UIState) -> Vec<Line<'a>> {
         .iter()
         .map(|nk| match nk {
             NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
+            NextKey::ParentKey { key, target_name } => (key, *target_name, " ⇀ "),
             NextKey::BranchKey { key } => (key, PREFIX_MARKER, " ⤙ "),
         })
         .collect();

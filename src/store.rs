@@ -139,6 +139,7 @@ pub enum Lookup {
 
 pub enum NextKey<'a> {
     LeafKey { key: char, target_name: &'a str },
+    ParentKey { key: char, target_name: &'a str },
     BranchKey { key: char },
 }
 
@@ -157,6 +158,7 @@ impl<'a> NextKey<'a> {
     pub fn key(&self) -> char {
         match self {
             NextKey::LeafKey { key, .. } => *key,
+            NextKey::ParentKey { key, .. } => *key,
             NextKey::BranchKey { key } => *key,
         }
     }
