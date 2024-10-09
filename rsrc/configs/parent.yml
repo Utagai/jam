@@ -1,0 +1,23 @@
+---
+options:
+  reconciliation_strategy: firstnonmatch
+  log_level: disabled
+targets:
+  - name: "ellipses"
+    targets:
+      - name: "dep foo"
+        cmd: "echo 'foo'"
+      - name: "dep bar"
+        cmd: "echo 'bar'"
+  - name: "noellipses"
+    targets:
+      - name: "foo"
+        cmd: "echo 'foo'"
+      - name: "bar"
+        cmd: "echo 'bar'"
+  - name: "single"
+    cmd: "echo 'single'"
+  - name: "double"
+    targets:
+      - name: "double"
+        cmd: "echo 'double'"

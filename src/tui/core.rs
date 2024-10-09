@@ -16,7 +16,8 @@ use ratatui::{
 use slog::{debug, info, Logger};
 
 use super::ui::{ui, UIState};
-use crate::jam::{Jam, Lookup, NextKey, Shortcut};
+use crate::jam::Jam;
+use crate::store::{Lookup, NextKey, Shortcut};
 
 pub(crate) const VISUAL_SEP_EMPTY_LINE_HEIGHT: u16 = 1;
 pub(crate) const CURRENT_PREFIX_INDICATOR_HEIGHT: u16 = 1;
@@ -188,7 +189,6 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 .scroll_offset
                 .saturating_add(1)
                 .min(app.next.len().saturating_sub(SCROLLABLE_REGION_MAX_HEIGHT));
-            eprintln!("scroll_offset: {}", app.scroll_offset);
             app.scroll_state = app.scroll_state.position(app.scroll_offset);
             Ok(Response::Request)
         }

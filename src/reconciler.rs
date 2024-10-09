@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::Chars};
 use anyhow::anyhow;
 use serde::Deserialize;
 
-use crate::jam::{Shortcut, ShortcutTrie};
+use crate::store::{Lookup, Shortcut, TargetStore};
 
 type Result = anyhow::Result<Vec<char>>;
 
@@ -15,10 +15,11 @@ fn reconciliation_err(conflicts: &[&str], shortuct: &Shortcut) -> anyhow::Error 
     )
 }
 
-type Reconciler = fn(shortcuts: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result;
+type Reconciler =
+    fn(target_store: &dyn TargetStore, conflicts: &[&str], shortcut: &Shortcut) -> Result;
 
 fn first_nonmatch_reconciler(
-    shortcuts: &ShortcutTrie,
+    target_store: &dyn TargetStore,
     conflicts: &[&str],
     shortcut: &Shortcut,
 ) -> Result {
@@ -53,9 +54,12 @@ fn first_nonmatch_reconciler(
                         still_conflict = true;
                     } else {
                         let new_shortcut = shortcut.append(&ch);
-                        if shortcuts.get(new_shortcut.iter()).is_some() {
-                            // This shortcut extension may avoid conflicts here, but not elsewhere.
-                            still_conflict = true;
+                        match target_store.lookup(None, &new_shortcut) {
+                            Lookup::NotFound => {}
+                            _ => {
+                                // This shortcut extension may avoid conflicts here, but not elsewhere.
+                                still_conflict = true;
+                            }
                         }
                         // If we get here though, we have a potential solution.
                         seen_chars.insert(ch);
@@ -87,7 +91,7 @@ fn first_nonmatch_reconciler(
 /// targets that avoids any ambiguity.
 pub static FIRST_NONMATCH: Reconciler = first_nonmatch_reconciler;
 
-fn error_reconciler(_: &ShortcutTrie, conflicts: &[&str], shortcut: &Shortcut) -> Result {
+fn error_reconciler(_: &dyn TargetStore, conflicts: &[&str], shortcut: &Shortcut) -> Result {
     Err(reconciliation_err(conflicts, shortcut))
 }
 
@@ -116,7 +120,7 @@ impl Default for Strategy {
 
 pub fn reconcile(
     kind: Strategy,
-    shortcuts: &ShortcutTrie,
+    target_store: &dyn TargetStore,
     conflicts: &[&str],
     shortcut: &Shortcut,
 ) -> Result {
@@ -125,16 +129,17 @@ pub fn reconcile(
         Strategy::FirstNonMatch => FIRST_NONMATCH,
     };
 
-    reconciler(shortcuts, conflicts, shortcut)
+    reconciler(target_store, conflicts, shortcut)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{store::SimpleStore, testutils::logger};
+
     use super::*;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use sequence_trie::SequenceTrie;
 
     macro_rules! shortcut {
 		    ( $( $x:expr ),* ) => {
@@ -159,8 +164,10 @@ mod tests {
     #[case::many_conflicts_keep_almost_reconciling(shortcut!['f'], vec!["fooly", "faozi", "failz"], Ok(vec!['y', 'i', 'z']))]
     #[case::unequal_length_conflicts_reconcile_in_time(shortcut!['f'], vec!["dinosaur", "rabbit", "river"], Ok(vec!['n', 'b', 'v']))]
     fn check(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>, #[case] expected: Result) {
-        let trie = SequenceTrie::new();
-        let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
+        let targets = vec![];
+        let target_store = SimpleStore::new(&logger::test(), &targets)
+            .expect("failed to create test target store");
+        let res = FIRST_NONMATCH(&target_store, &conflicts, &shortcut);
         assert_eq!(
             expected.unwrap(),
             res.expect("expected no error, but got one")
@@ -174,8 +181,10 @@ mod tests {
     #[case::multiple_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "baz", "quux"])]
     #[case::multiple_all_but_one_is_complete_prefix(shortcut!['f'], vec!["foo", "fool", "fooli", "foolicooli"])]
     fn check_err(#[case] shortcut: Shortcut, #[case] conflicts: Vec<&str>) {
-        let trie = SequenceTrie::new();
-        let res = FIRST_NONMATCH(&trie, &conflicts, &shortcut);
+        let targets = vec![];
+        let target_store = SimpleStore::new(&logger::test(), &targets)
+            .expect("failed to create test target store");
+        let res = FIRST_NONMATCH(&target_store, &conflicts, &shortcut);
         assert_eq!(
             format!("{:#?}", rerr(&conflicts, &shortcut).unwrap_err()),
             format!(

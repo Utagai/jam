@@ -7,7 +7,7 @@ use ratatui::{
 };
 use std::iter;
 
-use crate::jam::{NextKey, Shortcut};
+use crate::store::{NextKey, Shortcut};
 
 use super::core::{
     CURRENT_PREFIX_INDICATOR_HEIGHT, ELLIPSES_HEIGHT, ERROR_SECTION_HEIGHT,
@@ -89,6 +89,7 @@ fn key_text<'a>(state: &'a UIState) -> Vec<Line<'a>> {
         .iter()
         .map(|nk| match nk {
             NextKey::LeafKey { key, target_name } => (key, *target_name, " ⇀ "),
+            NextKey::ParentKey { key, target_name } => (key, *target_name, " ⇀ "),
             NextKey::BranchKey { key } => (key, PREFIX_MARKER, " ⤙ "),
         })
         .collect();
@@ -342,7 +343,7 @@ mod tests {
     };
 
     use crate::{
-        jam::NextKey,
+        store::NextKey,
         tui::ui::{ui, UIState},
     };
 
@@ -532,7 +533,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![NextKey::LeafKey {
                             key: 'a',
                             target_name: "build",
@@ -576,7 +577,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "some error",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![NextKey::LeafKey {
                             key: 'a',
                             target_name: "build",
@@ -620,7 +621,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -672,7 +673,7 @@ mod tests {
                         f,
                         UIState {
                             errmsg: "",
-                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                            prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![],
                             tick: i as u64,
                             help_mode: false,
@@ -712,7 +713,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec![]),
+                        prefix: &crate::store::Shortcut(vec![]),
                         key_target_pairs: &vec![],
                         tick: 1,
                         help_mode: false,
@@ -752,7 +753,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::BranchKey { key: 'a' },
                             NextKey::BranchKey { key: 'b' },
@@ -797,7 +798,7 @@ mod tests {
                     f,
                     UIState {
                         errmsg: "",
-                        prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                        prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                         key_target_pairs: &vec![
                             NextKey::LeafKey {
                                 key: 'a',
@@ -846,7 +847,7 @@ mod tests {
                         f,
                         UIState {
                             errmsg,
-                            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+                            prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
                             key_target_pairs: &vec![
                                 NextKey::LeafKey {
                                     key: 'a',
@@ -917,7 +918,7 @@ mod tests {
 
         let s = UIState {
             errmsg: "",
-            prefix: &crate::jam::Shortcut(vec!['h', 'y', 'z']),
+            prefix: &crate::store::Shortcut(vec!['h', 'y', 'z']),
             key_target_pairs: &keys,
             tick: 1,
             help_mode: false,

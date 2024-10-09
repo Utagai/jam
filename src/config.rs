@@ -60,6 +60,13 @@ pub struct Options {
     pub reconciliation_strategy: reconciler::Strategy,
 
     pub log_level: Option<log::Level>,
+
+    #[serde(default = "default_log_path")]
+    pub log_path: Option<String>,
+}
+
+pub fn default_log_path() -> Option<String> {
+    Some(String::from(log::DEFAULT_LOG_PATH))
 }
 
 impl KV for Options {
@@ -277,6 +284,7 @@ impl Config {
             options: Options {
                 reconciliation_strategy: reconciler::Strategy::Error,
                 log_level: Some(log::Level::Disabled),
+                log_path: default_log_path(),
             },
             imports: Some(vec![]),
             targets,
@@ -322,6 +330,7 @@ mod tests {
                 options: Options {
                     reconciliation_strategy: reconciler::Strategy::Error,
                     log_level: Some(log::Level::Disabled),
+                    log_path: default_log_path(),
                 },
                 targets,
             }
@@ -402,6 +411,7 @@ mod tests {
             options: Options {
                 reconciliation_strategy: reconciler::Strategy::Error,
                 log_level: Some(log::Level::Disabled),
+                log_path: default_log_path(),
             },
             imports: Some(vec![Import {
                 script: String::from(r#"echo '{"targets": [{"name": "foo", "cmd": "blah"}]}'"#),
