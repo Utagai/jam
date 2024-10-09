@@ -189,7 +189,6 @@ fn handle_keypress(app: &mut App, key: KeyEvent) -> Result<Response> {
                 .scroll_offset
                 .saturating_add(1)
                 .min(app.next.len().saturating_sub(SCROLLABLE_REGION_MAX_HEIGHT));
-            eprintln!("scroll_offset: {}", app.scroll_offset);
             app.scroll_state = app.scroll_state.position(app.scroll_offset);
             Ok(Response::Request)
         }

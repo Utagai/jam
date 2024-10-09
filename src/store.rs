@@ -560,61 +560,29 @@ impl<'a> SimpleStore<'a> {
     }
 
     fn next_no_conflict(&self, prefix: &Shortcut) -> ExecResult<Vec<NextKey>> {
-        if !self
-            .shortcut_to_targets
-            .keys()
-            .any(|key| key.0.starts_with(&prefix.0))
-        {
-            return Ok(vec![]);
+        let mut next_keys: HashMap<char, Vec<&str>> = HashMap::new();
+        for (shortcut, targets) in &self.shortcut_to_targets {
+            if shortcut.0.starts_with(&prefix.0) &&
+                // Include the grandchildren for distinguishing branches vs. leaves.
+                shortcut.0.len() <= prefix.0.len() + 2 &&
+                // Only look at shortcuts that are still reachable from the prefix.
+                shortcut.0.len() > prefix.0.len()
+            {
+                debug!(self.logger, "checking shortcut"; o!("shortcut" => format!("{}", shortcut), "prefix" => format!("{}", prefix), "tgts" => format!("{:?}", targets.len())));
+                let mut target_names: Vec<&str> = targets.iter().map(|tgt| tgt.name).collect();
+                next_keys
+                    .entry(shortcut.0[prefix.len()])
+                    .and_modify(|tgts| (*tgts).append(&mut target_names))
+                    .or_insert(target_names);
+            }
         }
 
-        let mut keys_to_names: Vec<NextKey> = self
-            .shortcut_to_targets
+        let keys_to_names: Vec<NextKey> = next_keys
             .iter()
-            .filter_map(|(shortcut, targets)| {
-                if shortcut.0.starts_with(&prefix.0) && shortcut.0.len() <= prefix.0.len() + 2 {
-                    let key = shortcut.0.get(prefix.0.len());
-                    if let Some(key) = key {
-                        let tgts: Vec<&str> = targets.iter().map(|t| t.name).collect();
-                        info!(self.logger, "checking shortcut"; o!("shortcut" => format!("{}", shortcut), "prefix" => format!("{}", prefix), "key" => key, "tgts" => format!("{:?}", tgts.len())));
-                        return Some(NextKey::new(*key, tgts));
-                    }
-                }
-                None
-            })
+            .map(|(ch, targets)| NextKey::new(*ch, targets.to_owned()))
             .collect();
-        // Because the keys we return are individual _characters_ of
-        // _full_ sequences, it is possible to return duplicates
-        // here. For example, consider the following shortcuts to
-        // exist:
-        //   a
-        //   ab
-        // The first call with the prefix being the empty shortcut will
-        // return [a,a] unless we de-dupe things.
-        // TODO: Update this comment. I'm not sure it is correct anymore, and
-        // even if it is, it is now a partial explanation since the comparison
-        // logic is more complex now.
-        // TODO: Or, and here's a crazy idea. Technically, without this extra
-        // crap, we won't show the '...' like we did before. However, arguably,
-        // what we had before was wrong. There wasn't actually a branch really,
-        // it was a single path it just wasn't a _leaf_. Could we introduce a
-        // new NextKey variant for this kind of node and render it specially?
-        keys_to_names.sort_by(|a, b| {
-            let cmp = a.key().cmp(&b.key());
-            if cmp == Ordering::Equal {
-                match (a, b) {
-                    (NextKey::BranchKey { .. }, NextKey::LeafKey { .. }) => Ordering::Less,
-                    (NextKey::LeafKey { .. }, NextKey::BranchKey { .. }) => Ordering::Greater,
-                    _ => Ordering::Equal,
-                }
-            } else {
-                cmp
-            }
-        });
-        keys_to_names.dedup_by(|a, b| a.key() == b.key());
 
-        // Now return the keys, mapped to their next target names.
-        info!(self.logger, "returning next keys"; o!("keys" => format!("{:?}", keys_to_names.len())));
+        debug!(self.logger, "returning next keys"; o!("keys" => format!("{:?}", keys_to_names.len())));
         Ok(keys_to_names)
     }
 }
